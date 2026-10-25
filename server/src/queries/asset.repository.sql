@@ -345,7 +345,8 @@ select
   "assetId",
   "isFavorite",
   "rating",
-  "colorLabel"
+  "colorLabel",
+  "flag"
 from
   "asset_user_state"
 where
@@ -360,15 +361,17 @@ insert into
     "assetId",
     "isFavorite",
     "rating",
-    "colorLabel"
+    "colorLabel",
+    "flag"
   )
 values
-  ($1, $2, $3, $4, $5)
+  ($1, $2, $3, $4, $5, $6)
 on conflict ("userId", "assetId") do update
 set
-  "isFavorite" = $6,
-  "rating" = $7,
-  "colorLabel" = $8,
+  "isFavorite" = $7,
+  "rating" = $8,
+  "colorLabel" = $9,
+  "flag" = $10,
   "updatedAt" = now()
 rollback
 
@@ -481,6 +484,17 @@ with
             and "asset_user_state"."userId" = $8
         )
       ) as "colorLabel",
+      (
+        (
+          select
+            "asset_user_state"."flag"
+          from
+            "asset_user_state"
+          where
+            "asset_user_state"."assetId" = "asset"."id"
+            and "asset_user_state"."userId" = $9
+        )
+      ) as "flag",
       asset.type = 'IMAGE' as "isImage",
       asset."deletedAt" is not null as "isTrashed",
       "asset"."livePhotoVideoId",
@@ -522,14 +536,14 @@ with
         where
           "stacked"."stackId" = "asset"."stackId"
           and "stacked"."deletedAt" is null
-          and "stacked"."visibility" = $9
+          and "stacked"."visibility" = $10
         group by
           "stacked"."stackId"
       ) as "stacked_assets" on true
     where
       "asset"."deletedAt" is null
       and "asset"."visibility" in ('archive', 'timeline')
-      and date_trunc('MONTH', "localDateTime" AT TIME ZONE 'UTC') AT TIME ZONE 'UTC' = $10
+      and date_trunc('MONTH', "localDateTime" AT TIME ZONE 'UTC') AT TIME ZONE 'UTC' = $11
       and not exists (
         select
         from
@@ -551,6 +565,7 @@ with
       coalesce(array_agg("isFavorite"), '{}') as "isFavorite",
       coalesce(array_agg("rating"), '{}') as "rating",
       coalesce(array_agg("colorLabel"), '{}') as "colorLabel",
+      coalesce(array_agg("flag"), '{}') as "flag",
       coalesce(array_agg("isImage"), '{}') as "isImage",
       coalesce(array_agg("isTrashed"), '{}') as "isTrashed",
       coalesce(array_agg("livePhotoVideoId"), '{}') as "livePhotoVideoId",

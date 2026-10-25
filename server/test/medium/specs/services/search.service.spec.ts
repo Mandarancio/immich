@@ -4,6 +4,7 @@ import { MetadataSearchDto, SearchSuggestionType } from 'src/dtos/search.dto.js'
 import {
   AlbumUserRole,
   AssetColorLabel,
+  AssetFlag,
   AssetOrder,
   AssetVisibility,
   SearchOrderField,
@@ -60,8 +61,12 @@ const setupShared = async () => {
   const { album } = await ctx.newAlbum({ ownerId: owner.id }, [asset.id, plain.id]);
   await ctx.newAlbumUser({ albumId: album.id, userId: member.id, role: AlbumUserRole.Viewer });
   const assets = ctx.get(AssetRepository);
-  await assets.setUserState(member.id, [asset.id], { rating: 4, colorLabel: AssetColorLabel.Red });
-  await assets.setUserState(owner.id, [asset.id], { colorLabel: AssetColorLabel.Blue });
+  await assets.setUserState(member.id, [asset.id], {
+    rating: 4,
+    colorLabel: AssetColorLabel.Red,
+    flag: AssetFlag.Pick,
+  });
+  await assets.setUserState(owner.id, [asset.id], { colorLabel: AssetColorLabel.Blue, flag: AssetFlag.Reject });
   // an album shared link created by the member, who has a personal rating and color on `asset`
   const { id: sharedLinkId } = await ctx.get(SharedLinkRepository).create({
     allowUpload: false,
@@ -363,6 +368,69 @@ describe(SearchService.name, () => {
           filter: {
             albumIds: { any: [album.id] },
             or: [{ colorLabels: [AssetColorLabel.Red] }],
+          },
+        });
+        expect(ids(response)).toEqual([asset.id]);
+      });
+    });
+  });
+
+  describe('viewer flags', () => {
+    describe('legacy', () => {
+      it('should filter by the flags of the viewer only', async () => {
+        const { sut, owner, member, asset, plain, album } = await setupShared();
+        const search = (auth: typeof member, flags: Array<AssetFlag | 'none'>) =>
+          sut.searchMetadata(auth, { size: 250, albumIds: [album.id], flags }).then((response) => ids(response));
+
+        expect(await search(member, [AssetFlag.Pick])).toEqual([asset.id]);
+        expect(await search(owner, [AssetFlag.Pick])).toEqual([]);
+        expect(await search(owner, [AssetFlag.Reject])).toEqual([asset.id]);
+        expect(await search(member, [AssetFlag.Reject])).toEqual([]);
+        expect(await search(member, ['none'])).toEqual([plain.id]);
+        const both = await search(member, ['none', AssetFlag.Pick]);
+        expect(both.sort()).toEqual([asset.id, plain.id].sort());
+      });
+
+      it('should not leak the personal flag of the link creator through a shared link', async () => {
+        const { sut, link, asset, plain, album } = await setupShared();
+        const base = { size: 250, albumIds: [album.id] };
+        expect(await searchIds(sut, link, { ...base, flags: [AssetFlag.Pick] })).toEqual([]);
+        const none = await searchIds(sut, link, { ...base, flags: ['none'] });
+        expect(none.sort()).toEqual([asset.id, plain.id].sort());
+      });
+    });
+
+    describe('new shape', () => {
+      it('should filter by the flags of the viewer only', async () => {
+        const { sut, owner, member, asset, plain, album } = await setupShared();
+        const search = (auth: typeof member, flags: Array<AssetFlag | 'none'>) =>
+          sut
+            .searchMetadata(auth, { size: 250, filter: { albumIds: { any: [album.id] }, flags } })
+            .then((response) => ids(response));
+
+        expect(await search(member, [AssetFlag.Pick])).toEqual([asset.id]);
+        expect(await search(owner, [AssetFlag.Pick])).toEqual([]);
+        expect(await search(owner, [AssetFlag.Reject])).toEqual([asset.id]);
+        expect(await search(member, ['none'])).toEqual([plain.id]);
+      });
+
+      it('should not leak the personal flag of the link creator through a shared link', async () => {
+        const { sut, link, asset, plain, album } = await setupShared();
+        const albumIds = { any: [album.id] };
+        const search = (filter: object) => searchIds(sut, link, { size: 250, filter: { albumIds, ...filter } });
+        expect(await search({ flags: [AssetFlag.Pick] })).toEqual([]);
+        const none = await search({ flags: ['none'] });
+        expect(none.sort()).toEqual([asset.id, plain.id].sort());
+        expect(await search({ or: [{ flags: [AssetFlag.Pick] }] })).toEqual([]);
+      });
+
+      it('should apply flags inside an or branch', async () => {
+        const { sut, member, asset, album } = await setupShared();
+        const response = await sut.searchMetadata(member, {
+          size: 250,
+          filter: {
+            albumIds: { any: [album.id] },
+            or: [{ flags: [AssetFlag.Pick] }],
           },
         });
         expect(ids(response)).toEqual([asset.id]);

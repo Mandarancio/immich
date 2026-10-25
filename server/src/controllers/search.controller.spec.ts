@@ -137,6 +137,32 @@ describe(SearchController.name, () => {
       );
     });
 
+    it('should reject the flat flags field combined with a new structure field', async () => {
+      const { status, body } = await request(ctx.getHttpServer())
+        .post('/search/metadata')
+        .send({ filter: {}, flags: ['pick'] });
+      expect(status).toBe(400);
+      expect(body).toEqual(
+        errorDto.validationError([
+          { path: ['flags'], message: 'Deprecated field flags cannot be combined with filter' },
+        ]),
+      );
+    });
+
+    it('should accept the flat flags field', async () => {
+      const { status } = await request(ctx.getHttpServer())
+        .post('/search/metadata')
+        .send({ flags: ['pick', 'none'] });
+      expect(status).toBe(200);
+    });
+
+    it('should reject an unknown flag', async () => {
+      const { status } = await request(ctx.getHttpServer())
+        .post('/search/metadata')
+        .send({ flags: ['maybe'] });
+      expect(status).toBe(400);
+    });
+
     it('should reject an unknown key in the filter', async () => {
       const { status, body } = await request(ctx.getHttpServer())
         .post('/search/metadata')

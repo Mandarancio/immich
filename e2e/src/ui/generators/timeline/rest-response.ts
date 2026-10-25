@@ -34,6 +34,7 @@ export function toColumnarFormat(assets: MockTimelineAsset[]): TimeBucketAssetRe
     isFavorite: [],
     rating: [],
     colorLabel: [],
+    flag: [],
     isTrashed: [],
     isImage: [],
     duration: [],
@@ -54,6 +55,7 @@ export function toColumnarFormat(assets: MockTimelineAsset[]): TimeBucketAssetRe
     result.isFavorite.push(asset.isFavorite);
     result.rating.push(null);
     result.colorLabel.push(null);
+    result.flag.push(null);
     result.isTrashed.push(asset.isTrashed);
     result.isImage.push(asset.isImage);
     result.duration.push(asset.duration);

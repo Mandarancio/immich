@@ -1088,6 +1088,8 @@ export type AssetBulkUpdateDto = {
     description?: string;
     /** Duplicate ID */
     duplicateId?: string | null;
+    /** Pick/reject flag (null clears) */
+    flag?: (AssetFlag) | null;
     /** Asset IDs to update */
     ids: string[];
     /** Mark as favorite */
@@ -1313,6 +1315,8 @@ export type AssetResponseDto = {
     fileCreatedAt: string;
     /** The UTC timestamp when the file was last modified on the filesystem. This reflects the last time the physical file was changed, which may be different from when the photo was originally taken. */
     fileModifiedAt: string;
+    /** The viewer's own pick/reject flag */
+    flag?: (AssetFlag) | null;
     /** Whether asset has metadata */
     hasMetadata: boolean;
     /** Asset height */
@@ -1365,6 +1369,8 @@ export type UpdateAssetDto = {
     dateTimeOriginal?: string;
     /** Asset description */
     description?: string;
+    /** Pick/reject flag (null clears) */
+    flag?: (AssetFlag) | null;
     /** Mark as favorite */
     isFavorite?: boolean;
     /** Latitude coordinate */
@@ -2416,6 +2422,8 @@ export type SearchFilterBranch = {
     description?: StringPatternFilter;
     encodedVideoPath?: StringFilter;
     fileSizeInBytes?: NumberFilter;
+    /** Only include assets with one of these flags, from the viewer perspective; "none" matches unflagged assets */
+    flags?: (AssetFlag | "none")[];
     hasAlbums?: BoolFilter;
     hasPeople?: BoolFilter;
     hasTags?: BoolFilter;
@@ -2452,6 +2460,8 @@ export type SearchFilter = {
     description?: StringPatternFilter;
     encodedVideoPath?: StringFilter;
     fileSizeInBytes?: NumberFilter;
+    /** Only include assets with one of these flags, from the viewer perspective; "none" matches unflagged assets */
+    flags?: (AssetFlag | "none")[];
     hasAlbums?: BoolFilter;
     hasPeople?: BoolFilter;
     hasTags?: BoolFilter;
@@ -2504,6 +2514,8 @@ export type MetadataSearchDto = {
     /** Filter by encoded video file path */
     encodedVideoPath?: string;
     filter?: SearchFilter;
+    /** Only include assets with one of these flags, from the viewer perspective; "none" matches unflagged assets */
+    flags?: (AssetFlag | "none")[];
     /** Filter by asset ID */
     id?: string;
     /** Filter by encoded status */
@@ -2633,6 +2645,8 @@ export type RandomSearchDto = {
     /** Filter by creation date (before) */
     createdBefore?: string;
     filter?: SearchFilter;
+    /** Only include assets with one of these flags, from the viewer perspective; "none" matches unflagged assets */
+    flags?: (AssetFlag | "none")[];
     /** Filter by encoded status */
     isEncoded?: boolean;
     /** Filter by favorite status */
@@ -2700,6 +2714,8 @@ export type SmartSearchDto = {
     /** Filter by creation date (before) */
     createdBefore?: string;
     filter?: SearchFilter;
+    /** Only include assets with one of these flags, from the viewer perspective; "none" matches unflagged assets */
+    flags?: (AssetFlag | "none")[];
     /** Filter by encoded status */
     isEncoded?: boolean;
     /** Filter by favorite status */
@@ -2773,6 +2789,8 @@ export type StatisticsSearchDto = {
     /** Filter by description text */
     description?: string;
     filter?: SearchFilter;
+    /** Only include assets with one of these flags, from the viewer perspective; "none" matches unflagged assets */
+    flags?: (AssetFlag | "none")[];
     /** Filter by encoded status */
     isEncoded?: boolean;
     /** Filter by favorite status */
@@ -3243,6 +3261,8 @@ export type TimeBucketAssetResponseDto = {
     duration: (number | null)[];
     /** Array of file creation timestamps in UTC */
     fileCreatedAt: string[];
+    /** Array of viewer pick/reject flags (null when unflagged) */
+    flag: ((AssetFlag) | null)[];
     /** Array of asset IDs in the time bucket */
     id: string[];
     /** Array indicating whether each asset is favorited */
@@ -6750,13 +6770,14 @@ export function getExploreData(opts?: Oazapfts.RequestOpts) {
 /**
  * Search large assets
  */
-export function searchLargeAssets({ albumIds, city, colorLabels, country, createdAfter, createdBefore, isEncoded, isFavorite, isMotion, isNotInAlbum, isOffline, lensModel, libraryId, make, minFileSize, model, ocr, personIds, rating, size, state, tagIds, takenAfter, takenBefore, trashedAfter, trashedBefore, $type, updatedAfter, updatedBefore, visibility, withDeleted, withExif }: {
+export function searchLargeAssets({ albumIds, city, colorLabels, country, createdAfter, createdBefore, flags, isEncoded, isFavorite, isMotion, isNotInAlbum, isOffline, lensModel, libraryId, make, minFileSize, model, ocr, personIds, rating, size, state, tagIds, takenAfter, takenBefore, trashedAfter, trashedBefore, $type, updatedAfter, updatedBefore, visibility, withDeleted, withExif }: {
     albumIds?: string[];
     city?: string | null;
     colorLabels?: (AssetColorLabel | "none")[];
     country?: string | null;
     createdAfter?: string;
     createdBefore?: string;
+    flags?: (AssetFlag | "none")[];
     isEncoded?: boolean;
     isFavorite?: boolean;
     isMotion?: boolean;
@@ -6794,6 +6815,7 @@ export function searchLargeAssets({ albumIds, city, colorLabels, country, create
         country,
         createdAfter,
         createdBefore,
+        flags,
         isEncoded,
         isFavorite,
         isMotion,
@@ -7686,10 +7708,11 @@ export function tagAssets({ id, bulkIdsDto }: {
 /**
  * Get time bucket
  */
-export function getTimeBucket({ albumId, bbox, colorLabels, isFavorite, isTrashed, key, order, orderBy, personId, rating, slug, tagId, timeBucket, unrated, userId, visibility, withCoordinates, withPartners, withStacked }: {
+export function getTimeBucket({ albumId, bbox, colorLabels, flags, isFavorite, isTrashed, key, order, orderBy, personId, rating, slug, tagId, timeBucket, unrated, userId, visibility, withCoordinates, withPartners, withStacked }: {
     albumId?: string;
     bbox?: string;
     colorLabels?: (AssetColorLabel | "none")[];
+    flags?: (AssetFlag | "none")[];
     isFavorite?: boolean;
     isTrashed?: boolean;
     key?: string;
@@ -7714,6 +7737,7 @@ export function getTimeBucket({ albumId, bbox, colorLabels, isFavorite, isTrashe
         albumId,
         bbox,
         colorLabels,
+        flags,
         isFavorite,
         isTrashed,
         key,
@@ -7737,10 +7761,11 @@ export function getTimeBucket({ albumId, bbox, colorLabels, isFavorite, isTrashe
 /**
  * Get time buckets
  */
-export function getTimeBuckets({ albumId, bbox, colorLabels, isFavorite, isTrashed, key, order, orderBy, personId, rating, slug, tagId, unrated, userId, visibility, withCoordinates, withPartners, withStacked }: {
+export function getTimeBuckets({ albumId, bbox, colorLabels, flags, isFavorite, isTrashed, key, order, orderBy, personId, rating, slug, tagId, unrated, userId, visibility, withCoordinates, withPartners, withStacked }: {
     albumId?: string;
     bbox?: string;
     colorLabels?: (AssetColorLabel | "none")[];
+    flags?: (AssetFlag | "none")[];
     isFavorite?: boolean;
     isTrashed?: boolean;
     key?: string;
@@ -7764,6 +7789,7 @@ export function getTimeBuckets({ albumId, bbox, colorLabels, isFavorite, isTrash
         albumId,
         bbox,
         colorLabels,
+        flags,
         isFavorite,
         isTrashed,
         key,
@@ -8527,6 +8553,10 @@ export enum AssetColorLabel {
     Green = "green",
     Blue = "blue",
     Purple = "purple"
+}
+export enum AssetFlag {
+    Pick = "pick",
+    Reject = "reject"
 }
 export enum AssetUploadAction {
     Accept = "accept",
