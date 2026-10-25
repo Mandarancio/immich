@@ -32,6 +32,7 @@
     type AlbumResponseDto,
     type AssetResponseDto,
     AssetVisibility,
+    getAlbumInfo,
     getPerson,
     getTagById,
     type MetadataSearchDto,
@@ -188,6 +189,7 @@
       lensModel: $t('lens_model'),
       personIds: $t('people'),
       tagIds: $t('tags'),
+      albumIds: $t('albums'),
       originalFileName: $t('file_name_text'),
       originalPath: $t('full_path_or_folder'),
       description: $t('description'),
@@ -226,6 +228,18 @@
     );
 
     return tagNames.join(', ');
+  }
+
+  async function getAlbumNames(albumIds: string[]) {
+    const albumNames = await Promise.all(
+      albumIds.map(async (albumId) => {
+        const album = await getAlbumInfo({ id: albumId });
+
+        return album.albumName;
+      }),
+    );
+
+    return albumNames.join(', ');
   }
 
   const onAlbumAddAssets = ({ assetIds }: { assetIds: string[] }) => {
@@ -280,6 +294,10 @@
               {:else if searchKey === 'tagIds' && (Array.isArray(value) || value === null)}
                 {#await getTagNames(value) then tagNames}
                   {tagNames}
+                {/await}
+              {:else if searchKey === 'albumIds' && Array.isArray(value)}
+                {#await getAlbumNames(value) then albumNames}
+                  {albumNames}
                 {/await}
               {:else if searchKey === 'rating'}
                 {$t('rating_count', { values: { count: value ?? 0 } })}
