@@ -2,6 +2,7 @@
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import type { TimelineFilterManager } from '$lib/managers/timeline-filter-manager.svelte';
   import { colorLabelClass, colorLabels } from '$lib/utils/color-label';
+  import { AssetFlag } from '@immich/sdk';
   import { Icon } from '@immich/ui';
   import { mdiClose, mdiHeart, mdiHeartOutline, mdiStar, mdiStarOutline } from '@mdi/js';
   import { t } from 'svelte-i18n';
@@ -23,6 +24,12 @@
     blue: $t('color_label_blue'),
     purple: $t('color_label_purple'),
   });
+
+  const flagButtons = $derived([
+    { id: AssetFlag.Pick, label: $t('flag_picked') },
+    { id: AssetFlag.Reject, label: $t('flag_rejected') },
+    { id: 'none', label: $t('filter_unflagged') },
+  ] as const);
 
   const buttonClass =
     'flex h-8 items-center gap-1 rounded-full border px-3 text-sm transition-colors focus-visible:outline-2 focus-visible:outline-primary';
@@ -109,6 +116,23 @@
       {$t('filter_no_color')}
     </button>
   </div>
+
+  {#if authManager.authenticated}
+    <div class="flex items-center gap-2" role="group" aria-label={$t('flag')}>
+      {#each flagButtons as { id, label } (id)}
+        {@const pressed = filter.flags.includes(id)}
+        <button
+          type="button"
+          data-testid="filter-flag-{id}"
+          class={[buttonClass, pressed ? activeClass : idleClass]}
+          aria-pressed={pressed}
+          onclick={() => filter.toggleFlag(id)}
+        >
+          {label}
+        </button>
+      {/each}
+    </div>
+  {/if}
 
   {#if filter.active}
     <button

@@ -32,6 +32,7 @@
   import SearchTextSection from './SearchTextSection.svelte';
   import SearchDisplaySection from './SearchDisplaySection.svelte';
   import SearchColorLabelsSection from './SearchColorLabelsSection.svelte';
+  import SearchFlagsSection from './SearchFlagsSection.svelte';
   import SearchRatingsSection from './SearchRatingsSection.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import {
@@ -154,7 +155,8 @@
       searchManager.filter.display.isFavorite ||
       searchManager.filter.display.isNotInAlbum ||
       searchManager.filter.rating ||
-      searchManager.filter.colorLabels.length > 0,
+      searchManager.filter.colorLabels.length > 0 ||
+      searchManager.filter.flags.length > 0,
   );
 
   const clear = () => {
@@ -279,6 +281,7 @@
               <SearchRatingsSection />
             {/if}
             <SearchColorLabelsSection bind:selected={searchManager.filter.colorLabels} />
+            <SearchFlagsSection bind:selected={searchManager.filter.flags} />
             <SearchDisplaySection />
           </div>
         </div>
