@@ -32,6 +32,8 @@ export function toColumnarFormat(assets: MockTimelineAsset[]): TimeBucketAssetRe
     fileCreatedAt: [],
     localOffsetHours: [],
     isFavorite: [],
+    rating: [],
+    colorLabel: [],
     isTrashed: [],
     isImage: [],
     duration: [],
@@ -50,6 +52,8 @@ export function toColumnarFormat(assets: MockTimelineAsset[]): TimeBucketAssetRe
     result.fileCreatedAt.push(asset.fileCreatedAt);
     result.localOffsetHours.push(0); // Assuming UTC for mocks
     result.isFavorite.push(asset.isFavorite);
+    result.rating.push(null);
+    result.colorLabel.push(null);
     result.isTrashed.push(asset.isTrashed);
     result.isImage.push(asset.isImage);
     result.duration.push(asset.duration);

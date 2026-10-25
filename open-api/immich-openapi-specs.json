@@ -11613,6 +11613,34 @@
             }
           },
           {
+            "name": "colorLabels",
+            "required": false,
+            "in": "query",
+            "x-immich-history": [
+              {
+                "version": "v3.2.0",
+                "state": "Added"
+              }
+            ],
+            "description": "Only include assets with one of these color labels, from the viewer perspective; \"none\" matches unlabeled assets",
+            "schema": {
+              "type": "array",
+              "items": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/AssetColorLabel"
+                  },
+                  {
+                    "type": "string",
+                    "enum": [
+                      "none"
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          {
             "name": "country",
             "required": false,
             "in": "query",
@@ -16185,6 +16213,28 @@
             }
           },
           {
+            "name": "colorLabels",
+            "required": false,
+            "in": "query",
+            "description": "Only include assets with one of these color labels (comma-separated); \"none\" matches unlabeled assets",
+            "schema": {
+              "type": "array",
+              "items": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/AssetColorLabel"
+                  },
+                  {
+                    "type": "string",
+                    "enum": [
+                      "none"
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          {
             "name": "isFavorite",
             "required": false,
             "in": "query",
@@ -16240,6 +16290,17 @@
             }
           },
           {
+            "name": "rating",
+            "required": false,
+            "in": "query",
+            "description": "Only include assets rated at least this many stars (1-5), from the viewer perspective",
+            "schema": {
+              "minimum": 1,
+              "maximum": 5,
+              "type": "integer"
+            }
+          },
+          {
             "name": "slug",
             "required": false,
             "in": "query",
@@ -16266,6 +16327,15 @@
             "schema": {
               "example": "2024-01-01T00:00:00.000Z",
               "type": "string"
+            }
+          },
+          {
+            "name": "unrated",
+            "required": false,
+            "in": "query",
+            "description": "Include only unrated assets (combined with rating as OR)",
+            "schema": {
+              "type": "boolean"
             }
           },
           {
@@ -16384,6 +16454,28 @@
             }
           },
           {
+            "name": "colorLabels",
+            "required": false,
+            "in": "query",
+            "description": "Only include assets with one of these color labels (comma-separated); \"none\" matches unlabeled assets",
+            "schema": {
+              "type": "array",
+              "items": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/AssetColorLabel"
+                  },
+                  {
+                    "type": "string",
+                    "enum": [
+                      "none"
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          {
             "name": "isFavorite",
             "required": false,
             "in": "query",
@@ -16439,6 +16531,17 @@
             }
           },
           {
+            "name": "rating",
+            "required": false,
+            "in": "query",
+            "description": "Only include assets rated at least this many stars (1-5), from the viewer perspective",
+            "schema": {
+              "minimum": 1,
+              "maximum": 5,
+              "type": "integer"
+            }
+          },
+          {
             "name": "slug",
             "required": false,
             "in": "query",
@@ -16455,6 +16558,15 @@
               "format": "uuid",
               "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
               "type": "string"
+            }
+          },
+          {
+            "name": "unrated",
+            "required": false,
+            "in": "query",
+            "description": "Include only unrated assets (combined with rating as OR)",
+            "schema": {
+              "type": "boolean"
             }
           },
           {
@@ -20171,6 +20283,15 @@
       },
       "AssetBulkUpdateDto": {
         "properties": {
+          "colorLabel": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AssetColorLabel"
+              }
+            ],
+            "description": "Color label (null clears)",
+            "nullable": true
+          },
           "dateTimeOriginal": {
             "description": "Original date and time",
             "type": "string"
@@ -20328,6 +20449,17 @@
           "id"
         ],
         "type": "object"
+      },
+      "AssetColorLabel": {
+        "description": "Asset color label",
+        "enum": [
+          "red",
+          "yellow",
+          "green",
+          "blue",
+          "purple"
+        ],
+        "type": "string"
       },
       "AssetCopyDto": {
         "properties": {
@@ -21196,6 +21328,21 @@
           "checksum": {
             "description": "Base64 encoded SHA1 hash",
             "type": "string"
+          },
+          "colorLabel": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AssetColorLabel"
+              }
+            ],
+            "description": "The viewer's own color label",
+            "nullable": true,
+            "x-immich-history": [
+              {
+                "version": "v3.3.0",
+                "state": "Added"
+              }
+            ]
           },
           "createdAt": {
             "description": "The UTC timestamp when the asset was originally uploaded to Immich.",
@@ -23646,6 +23793,29 @@
               }
             ],
             "x-immich-state": "Deprecated"
+          },
+          "colorLabels": {
+            "description": "Only include assets with one of these color labels, from the viewer perspective; \"none\" matches unlabeled assets",
+            "items": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/AssetColorLabel"
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "none"
+                  ]
+                }
+              ]
+            },
+            "type": "array",
+            "x-immich-history": [
+              {
+                "version": "v3.2.0",
+                "state": "Added"
+              }
+            ]
           },
           "country": {
             "deprecated": true,
@@ -26415,6 +26585,29 @@
             ],
             "x-immich-state": "Deprecated"
           },
+          "colorLabels": {
+            "description": "Only include assets with one of these color labels, from the viewer perspective; \"none\" matches unlabeled assets",
+            "items": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/AssetColorLabel"
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "none"
+                  ]
+                }
+              ]
+            },
+            "type": "array",
+            "x-immich-history": [
+              {
+                "version": "v3.2.0",
+                "state": "Added"
+              }
+            ]
+          },
           "country": {
             "deprecated": true,
             "description": "Filter by country name",
@@ -27358,6 +27551,23 @@
           "city": {
             "$ref": "#/components/schemas/StringFilterNullable"
           },
+          "colorLabels": {
+            "description": "Only include assets with one of these color labels, from the viewer perspective; \"none\" matches unlabeled assets",
+            "items": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/AssetColorLabel"
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "none"
+                  ]
+                }
+              ]
+            },
+            "type": "array"
+          },
           "country": {
             "$ref": "#/components/schemas/StringFilterNullable"
           },
@@ -27466,6 +27676,23 @@
           },
           "city": {
             "$ref": "#/components/schemas/StringFilterNullable"
+          },
+          "colorLabels": {
+            "description": "Only include assets with one of these color labels, from the viewer perspective; \"none\" matches unlabeled assets",
+            "items": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/AssetColorLabel"
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "none"
+                  ]
+                }
+              ]
+            },
+            "type": "array"
           },
           "country": {
             "$ref": "#/components/schemas/StringFilterNullable"
@@ -28617,6 +28844,29 @@
             ],
             "x-immich-state": "Deprecated"
           },
+          "colorLabels": {
+            "description": "Only include assets with one of these color labels, from the viewer perspective; \"none\" matches unlabeled assets",
+            "items": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/AssetColorLabel"
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "none"
+                  ]
+                }
+              ]
+            },
+            "type": "array",
+            "x-immich-history": [
+              {
+                "version": "v3.2.0",
+                "state": "Added"
+              }
+            ]
+          },
           "country": {
             "deprecated": true,
             "description": "Filter by country name",
@@ -29364,6 +29614,29 @@
               }
             ],
             "x-immich-state": "Deprecated"
+          },
+          "colorLabels": {
+            "description": "Only include assets with one of these color labels, from the viewer perspective; \"none\" matches unlabeled assets",
+            "items": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/AssetColorLabel"
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "none"
+                  ]
+                }
+              ]
+            },
+            "type": "array",
+            "x-immich-history": [
+              {
+                "version": "v3.2.0",
+                "state": "Added"
+              }
+            ]
           },
           "country": {
             "deprecated": true,
@@ -32360,6 +32633,18 @@
             },
             "type": "array"
           },
+          "colorLabel": {
+            "description": "Array of viewer color labels (null when not labeled)",
+            "items": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/AssetColorLabel"
+                }
+              ],
+              "nullable": true
+            },
+            "type": "array"
+          },
           "country": {
             "description": "Array of country names extracted from EXIF GPS data",
             "items": {
@@ -32469,6 +32754,16 @@
             },
             "type": "array"
           },
+          "rating": {
+            "description": "Array of viewer ratings (1-5 starred, -1 rejected, null unrated)",
+            "items": {
+              "maximum": 5,
+              "minimum": -1,
+              "nullable": true,
+              "type": "integer"
+            },
+            "type": "array"
+          },
           "ratio": {
             "description": "Array of aspect ratios (width/height) for each asset",
             "items": {
@@ -32507,6 +32802,7 @@
           }
         },
         "required": [
+          "colorLabel",
           "createdAt",
           "duration",
           "fileCreatedAt",
@@ -32518,6 +32814,7 @@
           "localOffsetHours",
           "ownerId",
           "projectionType",
+          "rating",
           "ratio",
           "thumbhash",
           "visibility"
@@ -32642,6 +32939,15 @@
       },
       "UpdateAssetDto": {
         "properties": {
+          "colorLabel": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AssetColorLabel"
+              }
+            ],
+            "description": "Color label (null clears)",
+            "nullable": true
+          },
           "dateTimeOriginal": {
             "description": "Original date and time",
             "type": "string"

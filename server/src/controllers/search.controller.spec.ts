@@ -125,6 +125,18 @@ describe(SearchController.name, () => {
       );
     });
 
+    it('should reject the flat colorLabels field combined with a new structure field', async () => {
+      const { status, body } = await request(ctx.getHttpServer())
+        .post('/search/metadata')
+        .send({ filter: {}, colorLabels: ['red'] });
+      expect(status).toBe(400);
+      expect(body).toEqual(
+        errorDto.validationError([
+          { path: ['colorLabels'], message: 'Deprecated field colorLabels cannot be combined with filter' },
+        ]),
+      );
+    });
+
     it('should reject an unknown key in the filter', async () => {
       const { status, body } = await request(ctx.getHttpServer())
         .post('/search/metadata')
