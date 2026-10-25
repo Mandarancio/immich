@@ -537,6 +537,20 @@ describe('TimelineManager', () => {
         );
       });
 
+      it('reloads the new context once, without the filter, when options and a cleared filter are applied together', async () => {
+        const timelineManager = new TimelineManager();
+        await timelineManager.updateOptions({ albumId: 'album-1' });
+        await timelineManager.setFilter({ rating: 3 });
+        sdkMock.getTimeBuckets.mockClear();
+
+        await timelineManager.updateOptions({ albumId: 'album-2', filter: {} });
+
+        expect(sdkMock.getTimeBuckets).toHaveBeenCalledOnce();
+        const params = sdkMock.getTimeBuckets.mock.calls[0][0];
+        expect(params).toEqual(expect.objectContaining({ albumId: 'album-2' }));
+        expect(params.rating).toBeUndefined();
+      });
+
       it('keeps the filter when the page options are updated', async () => {
         const timelineManager = new TimelineManager();
         await timelineManager.updateOptions({});

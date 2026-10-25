@@ -62,7 +62,7 @@
             selected ? 'text-primary' : 'text-gray-400 hover:text-primary',
           ]}
           aria-pressed={filter.rating === star}
-          aria-label={$t('rating_count', { values: { count: star } })}
+          aria-label={$t('filter_rating_min_count', { values: { count: star } })}
           title={$t('filter_rating_min')}
           onclick={() => filter.setRating(filter.rating === star ? undefined : star)}
         >

@@ -96,16 +96,22 @@
   const filter = new TimelineFilterManager();
   // the filter belongs to one timeline context: reset it when the options change in place (e.g. album or person id)
   const optionsKey = $derived(JSON.stringify(options ?? null));
+  let appliedOptionsKey = optionsKey;
+  // Options and filter reach the manager together, in one call, so a context change with an
+  // active filter reloads the new context once instead of first reloading the old one unfiltered.
   $effect(() => {
-    void optionsKey;
-    untrack(() => filter.clear());
-  });
-  $effect(() => {
+    if (optionsKey !== appliedOptionsKey) {
+      appliedOptionsKey = optionsKey;
+      untrack(() => filter.clear());
+    }
     // a bar that is not shown must not filter
     const query = showFilterBar ? filter.query : {};
-    void timelineManager.setFilter(query);
+    if (options) {
+      void timelineManager.updateOptions({ ...options, filter: query });
+    } else {
+      void timelineManager.setFilter(query);
+    }
   });
-  $effect(() => options && void timelineManager.updateOptions(options));
   const hideFavoriteFilter = $derived(options?.isFavorite !== undefined);
   let filterBarHeight = $state(0);
 

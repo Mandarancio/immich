@@ -1181,6 +1181,7 @@
   "filter_people": "Filter people",
   "filter_places": "Filter places",
   "filter_rating_min": "Minimum rating",
+  "filter_rating_min_count": "{count, plural, one {Minimum # star} other {Minimum # stars}}",
   "filter_tags": "Filter tags",
   "filter_unrated": "Unrated",
   "filters": "Filters",
