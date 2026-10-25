@@ -1,6 +1,6 @@
 import { Kysely } from 'kysely';
 import { AssetEditAction } from 'src/dtos/editing.dto.js';
-import { AssetFileType, AssetMetadataKey, AssetStatus, JobName, SharedLinkType } from 'src/enum.js';
+import { AlbumUserRole, AssetFileType, AssetMetadataKey, AssetStatus, JobName, SharedLinkType } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
 import { AssetEditRepository } from 'src/repositories/asset-edit.repository.js';
@@ -55,6 +55,47 @@ describe(AssetService.name, () => {
       await expect(sut.get(factory.auth({ user: otherUser }), asset.id)).rejects.toThrow(
         'Not found or no asset.read access',
       );
+    });
+  });
+
+  describe('shared favorites', () => {
+    it('should let an album member favorite a photo they do not own without touching the asset', async () => {
+      const { sut, ctx } = setup();
+      const { user: owner } = await ctx.newUser();
+      const { user: member } = await ctx.newUser();
+      const { asset } = await ctx.newAsset({ ownerId: owner.id });
+      const { album } = await ctx.newAlbum({ ownerId: owner.id }, [asset.id]);
+      await ctx.newAlbumUser({ albumId: album.id, userId: member.id, role: AlbumUserRole.Viewer });
+
+      const before = await ctx.database
+        .selectFrom('asset')
+        .select('updatedAt')
+        .where('id', '=', asset.id)
+        .executeTakeFirstOrThrow();
+
+      await sut.updateAll(factory.auth({ user: member }), { ids: [asset.id], isFavorite: true });
+
+      await expect(ctx.get(AssetRepository).getFavoriteIds(member.id, [asset.id])).resolves.toEqual(
+        new Set([asset.id]),
+      );
+      const row = await ctx.database
+        .selectFrom('asset')
+        .select(['isFavorite', 'updatedAt'])
+        .where('id', '=', asset.id)
+        .executeTakeFirstOrThrow();
+      expect(row.isFavorite).toBe(false);
+      expect(row.updatedAt).toEqual(before.updatedAt);
+    });
+
+    it('should reject favoriting a photo the user cannot read', async () => {
+      const { sut, ctx } = setup();
+      const { user: owner } = await ctx.newUser();
+      const { user: stranger } = await ctx.newUser();
+      const { asset } = await ctx.newAsset({ ownerId: owner.id });
+
+      await expect(
+        sut.updateAll(factory.auth({ user: stranger }), { ids: [asset.id], isFavorite: true }),
+      ).rejects.toThrow('Not found or no asset.read access');
     });
   });
 

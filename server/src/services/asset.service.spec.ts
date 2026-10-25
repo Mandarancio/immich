@@ -191,6 +191,64 @@ describe(AssetService.name, () => {
       );
     });
 
+    it('should favorite a shared-album asset the user does not own', async () => {
+      const asset = AssetFactory.create();
+      mocks.access.asset.checkAlbumAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getById.mockResolvedValue(getForAsset(asset));
+
+      await sut.update(authStub.admin, asset.id, { isFavorite: true });
+
+      expect(mocks.asset.addFavorites).toHaveBeenCalledWith(authStub.admin.user.id, [asset.id]);
+      expect(mocks.asset.update).not.toHaveBeenCalled();
+      expect(mocks.websocket.clientSend).not.toHaveBeenCalled();
+    });
+
+    it('should favorite a partner asset the user does not own', async () => {
+      const asset = AssetFactory.create();
+      mocks.access.asset.checkPartnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getById.mockResolvedValue(getForAsset(asset));
+
+      await sut.update(authStub.admin, asset.id, { isFavorite: true });
+
+      expect(mocks.asset.addFavorites).toHaveBeenCalledWith(authStub.admin.user.id, [asset.id]);
+    });
+
+    it('should unfavorite a non-owned asset', async () => {
+      const asset = AssetFactory.create();
+      mocks.access.asset.checkAlbumAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getById.mockResolvedValue(getForAsset(asset));
+
+      await sut.update(authStub.admin, asset.id, { isFavorite: false });
+
+      expect(mocks.asset.removeFavorites).toHaveBeenCalledWith(authStub.admin.user.id, [asset.id]);
+    });
+
+    it('should reject favoriting an asset the user cannot read', async () => {
+      await expect(sut.update(authStub.admin, 'asset-1', { isFavorite: true })).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      expect(mocks.asset.addFavorites).not.toHaveBeenCalled();
+    });
+
+    it('should not let a non-owner update other fields together with isFavorite', async () => {
+      const asset = AssetFactory.create();
+      mocks.access.asset.checkAlbumAccess.mockResolvedValue(new Set([asset.id]));
+
+      await expect(
+        sut.update(authStub.admin, asset.id, { isFavorite: true, description: 'nope' }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(mocks.asset.addFavorites).not.toHaveBeenCalled();
+    });
+
+    it('should not create a favorite for shared link auth', async () => {
+      const asset = AssetFactory.create();
+      mocks.access.asset.checkAlbumAccess.mockResolvedValue(new Set([asset.id]));
+      const auth = { ...authStub.admin, sharedLink: { id: 'link' } } as typeof authStub.admin;
+
+      await expect(sut.update(auth, asset.id, { isFavorite: true })).rejects.toBeInstanceOf(BadRequestException);
+      expect(mocks.asset.addFavorites).not.toHaveBeenCalled();
+    });
+
     it('should update the exif description', async () => {
       const asset = AssetFactory.create();
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
@@ -378,6 +436,51 @@ describe(AssetService.name, () => {
     it('should require asset write access for all ids', async () => {
       const auth = AuthFactory.create();
       await expect(sut.updateAll(auth, { ids: ['asset-1'] })).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('should favorite non-owned assets and update owned ones normally', async () => {
+      const auth = AuthFactory.create();
+      // only report the ids that were actually asked about, as the real repository does
+      mocks.access.asset.checkOwnerAccess.mockImplementation((_userId, ids) =>
+        Promise.resolve(new Set([...ids].filter((id) => id === 'owned'))),
+      );
+      mocks.access.asset.checkAlbumAccess.mockResolvedValue(new Set(['shared']));
+
+      await sut.updateAll(auth, { ids: ['owned', 'shared'], isFavorite: true });
+
+      expect(mocks.asset.addFavorites).toHaveBeenCalledWith(auth.user.id, ['shared']);
+      expect(mocks.asset.updateAll).toHaveBeenCalledWith(['owned'], { isFavorite: true });
+    });
+
+    it('should only write shared favorites when every id is non-owned', async () => {
+      const auth = AuthFactory.create();
+      mocks.access.asset.checkAlbumAccess.mockResolvedValue(new Set(['shared']));
+
+      await sut.updateAll(auth, { ids: ['shared'], isFavorite: false });
+
+      expect(mocks.asset.removeFavorites).toHaveBeenCalledWith(auth.user.id, ['shared']);
+      expect(mocks.asset.updateAll).not.toHaveBeenCalled();
+      expect(mocks.websocket.clientSend).not.toHaveBeenCalled();
+    });
+
+    it('should reject when some ids are neither owned nor readable', async () => {
+      const auth = AuthFactory.create();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['owned']));
+
+      await expect(sut.updateAll(auth, { ids: ['owned', 'unknown'], isFavorite: true })).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      expect(mocks.asset.updateAll).not.toHaveBeenCalled();
+    });
+
+    it('should require ownership when other fields are present', async () => {
+      const auth = AuthFactory.create();
+      mocks.access.asset.checkAlbumAccess.mockResolvedValue(new Set(['shared']));
+
+      await expect(
+        sut.updateAll(auth, { ids: ['shared'], isFavorite: true, visibility: AssetVisibility.Archive }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(mocks.asset.addFavorites).not.toHaveBeenCalled();
     });
 
     it('should update all assets', async () => {
