@@ -9,14 +9,22 @@
     mdiChevronDown,
     mdiChevronUp,
     mdiImage,
+    mdiImageMultiple,
     mdiMagnify,
     mdiMapMarker,
     mdiTagMultiple,
     mdiTune,
   } from '@mdi/js';
   import SearchLocationSection from './SearchLocationSection.svelte';
-  import { getAllTags, type PersonResponseDto, type TagResponseDto } from '@immich/sdk';
+  import {
+    getAllAlbums,
+    getAllTags,
+    type AlbumResponseDto,
+    type PersonResponseDto,
+    type TagResponseDto,
+  } from '@immich/sdk';
   import SearchMediaSection from './SearchMediaSection.svelte';
+  import SearchAlbumsSection from './SearchAlbumsSection.svelte';
   import SearchCameraSection from './SearchCameraSection.svelte';
   import SearchDateSection from './SearchDateSection.svelte';
   import SearchPeopleSection from './SearchPeopleSection.svelte';
@@ -27,6 +35,7 @@
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import {
     getPeople,
+    getSearchAlbumsTitle,
     getSearchDatePreset,
     getSearchDateTitle,
     getSearchMediaTitle,
@@ -67,6 +76,8 @@
   let people = $state<PersonResponseDto[]>();
   let tagsPromise = $state<Promise<TagResponseDto[]>>();
   let tags = $state<TagResponseDto[]>();
+  let albumsPromise = $state<Promise<AlbumResponseDto[]>>();
+  let albums = $state<AlbumResponseDto[]>();
 
   let typeTitle = $derived(getSearchTypeTitle(searchManager.filter.queryType));
   let peopleTitle = $state<string>();
@@ -85,6 +96,7 @@
     ),
   );
   let tagsTitle = $state<string>();
+  let albumsTitle = $state<string>();
   let mediaTitle = $derived(getSearchMediaTitle(searchManager.filter.mediaType));
 
   let filters = [
@@ -123,6 +135,12 @@
         ]
       : []),
     {
+      name: 'albums',
+      icon: mdiImageMultiple,
+      title: $t('albums'),
+      activeTitle: () => albumsTitle,
+    },
+    {
       name: 'media',
       icon: mdiImage,
       title: $t('media'),
@@ -139,7 +157,7 @@
 
   const clear = () => {
     searchManager.reset();
-    peopleTitle = tagsTitle = undefined;
+    peopleTitle = tagsTitle = albumsTitle = undefined;
   };
 
   onMount(() => {
@@ -151,6 +169,11 @@
     if (searchManager.filter.tagIds?.size && !tagsPromise) {
       tagsPromise = getAllTags();
       void tagsPromise.then((res) => (tags = res));
+    }
+
+    if (searchManager.filter.albumIds.size > 0 && !albumsPromise) {
+      albumsPromise = getAllAlbums({});
+      void albumsPromise.then((res) => (albums = res));
     }
   });
 
@@ -165,6 +188,12 @@
       tagsTitle = $t('untagged');
     } else if (tags) {
       tagsTitle = getSearchTagsTitle(tags, searchManager.filter.tagIds);
+    }
+  });
+
+  $effect(() => {
+    if (albums) {
+      albumsTitle = getSearchAlbumsTitle(albums, searchManager.filter.albumIds);
     }
   });
 
@@ -227,6 +256,8 @@
             <SearchLocationSection />
           {:else if activeFilter === 'tags'}
             <SearchTagsSection bind:title={tagsTitle} parentPromise={tagsPromise} />
+          {:else if activeFilter === 'albums'}
+            <SearchAlbumsSection bind:title={albumsTitle} parentPromise={albumsPromise} />
           {:else if activeFilter === 'media'}
             <SearchMediaSection />
           {/if}
