@@ -131,6 +131,46 @@ describe('AssetService', () => {
       });
     });
 
+    describe('SetColorLabel', () => {
+      beforeEach(() => {
+        vitest.mocked(getFormatter).mockResolvedValue(vitest.fn().mockReturnValue('formatter'));
+        vitest.mocked(updateAsset).mockReset();
+        authManager.setUser(userAdminFactory.build({ id: 'viewer' }));
+      });
+
+      const press = (key: string) => ({ event: new KeyboardEvent('keydown', { key }) }) as never;
+
+      it('should bind 6 to 9 and be offered to a logged-in user', () => {
+        const asset = assetFactory.build({ ownerId: 'someone-else' });
+        const { SetColorLabel } = getAssetActions(() => '', asset);
+        expect(SetColorLabel.$if?.()).toStrictEqual(true);
+        expect([SetColorLabel.shortcuts].flat().map((shortcut) => shortcut?.key)).toEqual(['6', '7', '8', '9']);
+      });
+
+      it('should set the color of the pressed key', async () => {
+        const asset = assetFactory.build({ colorLabel: null });
+        vitest.mocked(updateAsset).mockResolvedValue(asset);
+        await getAssetActions(() => '', asset).SetColorLabel.onAction(press('7'));
+        expect(updateAsset).toHaveBeenCalledWith({
+          id: asset.id,
+          updateAssetDto: { colorLabel: AssetColorLabel.Yellow },
+        });
+      });
+
+      it('should clear the color when the asset already has it', async () => {
+        const asset = assetFactory.build({ colorLabel: AssetColorLabel.Red });
+        vitest.mocked(updateAsset).mockResolvedValue(asset);
+        await getAssetActions(() => '', asset).SetColorLabel.onAction(press('6'));
+        expect(updateAsset).toHaveBeenCalledWith({ id: asset.id, updateAssetDto: { colorLabel: null } });
+      });
+
+      it('should not be offered on a shared link', () => {
+        setSharedLink(sharedLinkFactory.build());
+        const asset = assetFactory.build({ ownerId: 'someone-else' });
+        expect(getAssetActions(() => '', asset).SetColorLabel.$if?.()).toStrictEqual(false);
+      });
+    });
+
     it('should not allow shared link downloads if the user does not own the asset and shared link downloads are disabled', () => {
       const ownerId = 'owner';
       const user = userAdminFactory.build({ id: 'non-owner' });

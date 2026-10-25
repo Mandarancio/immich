@@ -15,6 +15,7 @@
   import NavigateToDateModal from '$lib/modals/NavigateToDateModal.svelte';
   import ShortcutsModal from '$lib/modals/ShortcutsModal.svelte';
   import { Route } from '$lib/route';
+  import { getBulkUserStateShortcuts } from '$lib/services/asset.service';
   import { handleStack } from '$lib/services/stack.service';
   import { keyboardManager } from '$lib/stores/keyboard-manager.svelte';
   import { showDeleteModal } from '$lib/stores/preferences.store';
@@ -136,6 +137,12 @@
         { shortcut: { key: 'D', ctrl: true }, onShortcut: () => assetInteraction.clear() },
         { shortcut: { key: 's' }, onShortcut: () => onStackAssets() },
         { shortcut: { key: 'a', shift: true }, onShortcut: toggleArchive },
+        ...getBulkUserStateShortcuts({
+          getAssets: () => assetInteraction.assets,
+          onRated: (ids, rating) => timelineManager.update(ids, (asset) => (asset.rating = rating)),
+          onLabeled: (ids, label) => timelineManager.update(ids, (asset) => (asset.colorLabel = label)),
+          onDone: () => assetInteraction.clear(),
+        }),
       );
     } else {
       // conflicting shortcuts

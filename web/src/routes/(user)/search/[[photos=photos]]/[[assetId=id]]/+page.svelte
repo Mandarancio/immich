@@ -14,6 +14,8 @@
   import DeleteAssets from '$lib/components/timeline/actions/DeleteAssetsAction.svelte';
   import DownloadAction from '$lib/components/timeline/actions/DownloadAction.svelte';
   import FavoriteAction from '$lib/components/timeline/actions/FavoriteAction.svelte';
+  import SetColorLabelAction from '$lib/components/timeline/actions/SetColorLabelAction.svelte';
+  import SetRatingAction from '$lib/components/timeline/actions/SetRatingAction.svelte';
   import SetVisibilityAction from '$lib/components/timeline/actions/SetVisibilityAction.svelte';
   import AssetSelectControlBar from '$lib/components/timeline/AssetSelectControlBar.svelte';
   import { QueryParameter } from '$lib/constants';
@@ -382,6 +384,26 @@
                 const asset = searchResultAssets.find((asset) => asset.id === id);
                 if (asset) {
                   asset.isFavorite = isFavorite;
+                }
+              }
+            }}
+          />
+          <SetRatingAction
+            onRated={(ids, rating) => {
+              for (const id of ids) {
+                const asset = searchResultAssets.find((asset) => asset.id === id);
+                if (asset?.exifInfo) {
+                  asset.exifInfo.rating = rating;
+                }
+              }
+            }}
+          />
+          <SetColorLabelAction
+            onLabeled={(ids, label) => {
+              for (const id of ids) {
+                const asset = searchResultAssets.find((asset) => asset.id === id);
+                if (asset) {
+                  asset.colorLabel = label;
                 }
               }
             }}

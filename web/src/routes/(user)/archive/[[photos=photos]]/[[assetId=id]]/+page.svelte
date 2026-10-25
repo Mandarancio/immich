@@ -6,6 +6,8 @@
   import DeleteAssets from '$lib/components/timeline/actions/DeleteAssetsAction.svelte';
   import DownloadAction from '$lib/components/timeline/actions/DownloadAction.svelte';
   import FavoriteAction from '$lib/components/timeline/actions/FavoriteAction.svelte';
+  import SetColorLabelAction from '$lib/components/timeline/actions/SetColorLabelAction.svelte';
+  import SetRatingAction from '$lib/components/timeline/actions/SetRatingAction.svelte';
   import SelectAllAssets from '$lib/components/timeline/actions/SelectAllAction.svelte';
   import AssetSelectControlBar from '$lib/components/timeline/AssetSelectControlBar.svelte';
   import Timeline from '$lib/components/timeline/Timeline.svelte';
@@ -74,6 +76,10 @@
     <FavoriteAction
       removeFavorite={assetMultiSelectManager.isAllFavorite}
       onFavorite={(ids, isFavorite) => timelineManager.update(ids, (asset) => (asset.isFavorite = isFavorite))}
+    />
+    <SetRatingAction onRated={(ids, rating) => timelineManager.update(ids, (asset) => (asset.rating = rating))} />
+    <SetColorLabelAction
+      onLabeled={(ids, label) => timelineManager.update(ids, (asset) => (asset.colorLabel = label))}
     />
     <ButtonContextMenu icon={mdiDotsVertical} title={$t('menu')}>
       <DownloadAction menuItem />
