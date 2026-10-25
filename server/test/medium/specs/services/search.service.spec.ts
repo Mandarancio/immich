@@ -51,7 +51,7 @@ describe(SearchService.name, () => {
     await ctx.newExif({ assetId: asset.id, make: 'Canon' });
     const { album } = await ctx.newAlbum({ ownerId: owner.id }, [asset.id]);
     await ctx.newAlbumUser({ albumId: album.id, userId: member.id, role: AlbumUserRole.Viewer });
-    await ctx.get(AssetRepository).addFavorites(member.id, [asset.id]);
+    await ctx.get(AssetRepository).setUserState(member.id, [asset.id], { isFavorite: true });
 
     const asMember = await sut.searchMetadata(factory.auth({ user: member }), { size: 250, isFavorite: true });
     expect(asMember.assets.items.map(({ id }) => id)).toEqual([asset.id]);

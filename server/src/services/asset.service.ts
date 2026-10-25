@@ -642,7 +642,7 @@ export class AssetService extends BaseService {
     await this.jobRepository.queue({ name: JobName.AssetEditThumbnailGeneration, data: { id } });
   }
 
-  // a favorite-only update is allowed on any asset the user can read; non-owned ones go to asset_favorite
+  // a favorite-only update is allowed on any asset the user can read; non-owned ones go to asset_user_state
   private isFavoriteOnly(auth: AuthDto, dto: object, isFavorite?: boolean) {
     if (auth.sharedLink || isFavorite === undefined) {
       return false;
@@ -651,11 +651,9 @@ export class AssetService extends BaseService {
   }
 
   // the asset column stays authoritative for owned assets (legacy clients and sync read it), so the owner row in
-  // asset_favorite is only a mirror of the change that was just written to the column
+  // asset_user_state is only a mirror of the change that was just written to the column
   private async mirrorOwnedFavorites(auth: AuthDto, ownedIds: string[], isFavorite: boolean): Promise<void> {
-    await (isFavorite
-      ? this.assetRepository.addFavorites(auth.user.id, ownedIds)
-      : this.assetRepository.removeFavorites(auth.user.id, ownedIds));
+    await this.assetRepository.setUserState(auth.user.id, ownedIds, { isFavorite });
   }
 
   // writes shared favorites for the non-owned ids and returns the owned ids
@@ -667,9 +665,7 @@ export class AssetService extends BaseService {
     }
 
     await this.requireAccess({ auth, permission: Permission.AssetRead, ids: others });
-    await (isFavorite
-      ? this.assetRepository.addFavorites(auth.user.id, others)
-      : this.assetRepository.removeFavorites(auth.user.id, others));
+    await this.assetRepository.setUserState(auth.user.id, others, { isFavorite });
 
     return ids.filter((id) => owned.has(id));
   }

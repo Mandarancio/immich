@@ -1,9 +1,10 @@
 import { Kysely } from 'kysely';
-import { AssetFileType, AssetOrder, AssetOrderBy, AssetVisibility } from 'src/enum.js';
+import { AssetColorLabel, AssetFileType, AssetOrder, AssetOrderBy, AssetVisibility } from 'src/enum.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { DB } from 'src/schema/index.js';
 import { down, up } from 'src/schema/migrations/1793000000000-AddAssetFavoriteTable.js';
+import { down as downUserState, up as upUserState } from 'src/schema/migrations/1793000000001-AddAssetUserState.js';
 import { BaseService } from 'src/services/base.service.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { factory } from 'test/small.factory.js';
@@ -18,6 +19,11 @@ const setup = (db?: Kysely<DB>) => {
     mock: [LoggingRepository],
   });
   return { ctx, sut: ctx.get(AssetRepository) };
+};
+
+const stateOf = async (sut: AssetRepository, userId: string, assetId: string) => {
+  const states = await sut.getUserStates(userId, [assetId]);
+  return states.get(assetId);
 };
 
 beforeAll(async () => {
@@ -536,15 +542,96 @@ describe(AssetRepository.name, () => {
       const { user: other } = await ctx.newUser();
       const { asset } = await ctx.newAsset({ ownerId: owner.id });
 
-      await sut.addFavorites(viewer.id, [asset.id]);
-      await sut.addFavorites(viewer.id, [asset.id]); // idempotent
+      await sut.setUserState(viewer.id, [asset.id], { isFavorite: true });
+      await sut.setUserState(viewer.id, [asset.id], { isFavorite: true }); // idempotent
 
-      await expect(sut.getFavoriteIds(viewer.id, [asset.id])).resolves.toEqual(new Set([asset.id]));
-      await expect(sut.getFavoriteIds(other.id, [asset.id])).resolves.toEqual(new Set());
-      await expect(sut.getFavoriteIds(viewer.id, [])).resolves.toEqual(new Set());
+      const isFavorite = async (userId: string, ids: string[]) =>
+        new Set([...(await sut.getUserStates(userId, ids))].filter(([, state]) => state.isFavorite).map(([id]) => id));
+      await expect(isFavorite(viewer.id, [asset.id])).resolves.toEqual(new Set([asset.id]));
+      await expect(isFavorite(other.id, [asset.id])).resolves.toEqual(new Set());
+      await expect(isFavorite(viewer.id, [])).resolves.toEqual(new Set());
 
-      await sut.removeFavorites(viewer.id, [asset.id]);
-      await expect(sut.getFavoriteIds(viewer.id, [asset.id])).resolves.toEqual(new Set());
+      await sut.setUserState(viewer.id, [asset.id], { isFavorite: false });
+      await expect(isFavorite(viewer.id, [asset.id])).resolves.toEqual(new Set());
+      await expect(sut.getUserStates(viewer.id, [asset.id])).resolves.toEqual(new Map());
+    });
+  });
+
+  describe('user state', () => {
+    it('setUserState upserts only the provided fields and deletes empty rows', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { user: owner } = await ctx.newUser();
+      const { asset } = await ctx.newAsset({ ownerId: owner.id });
+
+      await sut.setUserState(user.id, [asset.id], { rating: 4 });
+      await sut.setUserState(user.id, [asset.id], { colorLabel: AssetColorLabel.Red });
+      expect(await stateOf(sut, user.id, asset.id)).toEqual({
+        isFavorite: false,
+        rating: 4,
+        colorLabel: 'red',
+      });
+
+      await sut.setUserState(user.id, [asset.id], { isFavorite: true });
+      expect(await stateOf(sut, user.id, asset.id)).toEqual({
+        isFavorite: true,
+        rating: 4,
+        colorLabel: 'red',
+      });
+
+      await sut.setUserState(user.id, [asset.id], { rating: null, colorLabel: null });
+      expect(await stateOf(sut, user.id, asset.id)).toEqual({
+        isFavorite: true,
+        rating: null,
+        colorLabel: null,
+      });
+
+      await sut.setUserState(user.id, [asset.id], { isFavorite: false });
+      expect(await sut.getUserStates(user.id, [asset.id])).toEqual(new Map());
+    });
+
+    it('setUserState ignores an empty change and rejects an out of range rating', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { asset } = await ctx.newAsset({ ownerId: user.id });
+
+      await sut.setUserState(user.id, [asset.id], {});
+      await sut.setUserState(user.id, [asset.id], { rating: undefined });
+      expect(await sut.getUserStates(user.id, [asset.id])).toEqual(new Map());
+
+      await expect(sut.setUserState(user.id, [asset.id], { rating: 6 })).rejects.toThrow();
+    });
+  });
+
+  describe('asset_user_state migration', () => {
+    it('should turn legacy favorite rows into favorite states and round trip', async () => {
+      const db = await getKyselyDB();
+      const { ctx } = setup(db);
+      const { user } = await ctx.newUser();
+      const { asset } = await ctx.newAsset({ ownerId: user.id });
+      const { asset: other } = await ctx.newAsset({ ownerId: user.id });
+
+      await downUserState(db);
+      await db
+        .insertInto('asset_favorite' as never)
+        .values({ userId: user.id, assetId: asset.id } as never)
+        .execute();
+
+      const read = () =>
+        db
+          .selectFrom('asset_user_state')
+          .select(['assetId', 'isFavorite', 'rating', 'colorLabel'])
+          .orderBy('assetId')
+          .execute();
+
+      await upUserState(db);
+      await expect(read()).resolves.toEqual([{ assetId: asset.id, isFavorite: true, rating: null, colorLabel: null }]);
+
+      // rows that are not favorites are dropped when reverting, favorites survive the round trip
+      await db.insertInto('asset_user_state').values({ userId: user.id, assetId: other.id, rating: 3 }).execute();
+      await downUserState(db);
+      await upUserState(db);
+      await expect(read()).resolves.toEqual([{ assetId: asset.id, isFavorite: true, rating: null, colorLabel: null }]);
     });
   });
 
@@ -565,13 +652,19 @@ describe(AssetRepository.name, () => {
       });
       await ctx.newAsset({ ownerId: userB.id, deletedAt: new Date() });
 
+      // revert to the asset_favorite shape first, then replay the original migration over the pre-existing assets
+      await downUserState(db);
       await down(db);
       const read = () =>
         db
-          .selectFrom('asset_favorite')
-          .select(['userId', 'assetId'])
+          .selectFrom('asset_favorite' as never)
+          .select(['userId', 'assetId'] as never)
           .execute()
-          .then((rows) => rows.map(({ userId, assetId }) => `${userId}:${assetId}`).toSorted());
+          .then((rows) =>
+            (rows as unknown as Array<{ userId: string; assetId: string }>)
+              .map(({ userId, assetId }) => `${userId}:${assetId}`)
+              .toSorted(),
+          );
 
       const expected = [
         `${userA.id}:${favorite.id}`,
@@ -591,6 +684,9 @@ describe(AssetRepository.name, () => {
       await expect(db.selectFrom('asset').select('id').where('isFavorite', '=', true).execute()).resolves.toHaveLength(
         3,
       );
+
+      // restore the current schema
+      await upUserState(db);
     });
   });
 

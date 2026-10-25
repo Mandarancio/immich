@@ -102,3 +102,4 @@
 1792511451454-AddPasskeyTable
 1792517020180-AddUpdateIdIndexes
 1793000000000-AddAssetFavoriteTable
+1793000000001-AddAssetUserState
