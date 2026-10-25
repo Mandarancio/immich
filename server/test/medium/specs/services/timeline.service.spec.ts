@@ -1,6 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 import { Kysely } from 'kysely';
-import { AlbumUserRole, AssetOrderBy, AssetVisibility, SharedLinkType } from 'src/enum.js';
+import { AlbumUserRole, AssetColorLabel, AssetOrderBy, AssetVisibility, SharedLinkType } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -44,6 +44,31 @@ const readBucket = async (
   );
 };
 
+// owner assets: five (exif 5), three (exif 3), none (no rating), rejected (exif -1)
+const setupRated = async (ctx: ReturnType<typeof setup>['ctx']) => {
+  const { user: owner } = await ctx.newUser();
+  const { user: member } = await ctx.newUser();
+  const { user: partner } = await ctx.newUser();
+  const assets: Record<string, string> = {};
+  for (const [name, rating] of [
+    ['five', 5],
+    ['three', 3],
+    ['none', null],
+    ['rejected', -1],
+  ] as const) {
+    const { asset } = await ctx.newAsset({ ownerId: owner.id, localDateTime: new Date('2024-03-05') });
+    await ctx.newExif({ assetId: asset.id, make: 'Canon', rating });
+    assets[name] = asset.id;
+  }
+  const { album } = await ctx.newAlbum({ ownerId: owner.id }, Object.values(assets));
+  await ctx.newAlbumUser({ albumId: album.id, userId: member.id, role: AlbumUserRole.Viewer });
+  await ctx.newPartner({ sharedById: owner.id, sharedWithId: partner.id });
+  return { owner, member, partner, assets, album };
+};
+
+const idsOf = (bucket: { id: string[] }[] | undefined) => (bucket?.[0]?.id ?? []).toSorted();
+const sorted = (...ids: string[]) => ids.toSorted();
+
 beforeAll(async () => {
   defaultDatabase = await getKyselyDB();
 });
@@ -73,30 +98,35 @@ describe(TimelineService.name, () => {
       const response1 = sut.getTimeBuckets(auth, { withPartners: true, visibility: AssetVisibility.Archive });
       await expect(response1).rejects.toBeInstanceOf(BadRequestException);
       await expect(response1).rejects.toThrow(
-        'withPartners is only supported for non-archived, non-trashed, non-favorited, non-locked assets',
+        'withPartners is only supported for non-archived, non-trashed, non-locked assets',
       );
 
       const response2 = sut.getTimeBuckets(auth, { withPartners: true });
       await expect(response2).rejects.toBeInstanceOf(BadRequestException);
       await expect(response2).rejects.toThrow(
-        'withPartners is only supported for non-archived, non-trashed, non-favorited, non-locked assets',
+        'withPartners is only supported for non-archived, non-trashed, non-locked assets',
       );
     });
 
-    it('should return error if time bucket is requested with partners asset and favorite', async () => {
+    it('should allow filtering by favorite on a timeline that includes partners', async () => {
       const { sut } = setup();
       const auth = factory.auth();
-      const response1 = sut.getTimeBuckets(auth, { withPartners: true, isFavorite: false });
-      await expect(response1).rejects.toBeInstanceOf(BadRequestException);
-      await expect(response1).rejects.toThrow(
-        'withPartners is only supported for non-archived, non-trashed, non-favorited, non-locked assets',
-      );
+      await expect(sut.getTimeBuckets(auth, { withPartners: true, visibility: AssetVisibility.Timeline, isFavorite: false })).resolves.toEqual([]);
+      await expect(sut.getTimeBuckets(auth, { withPartners: true, visibility: AssetVisibility.Timeline, isFavorite: true })).resolves.toEqual([]);
+    });
 
-      const response2 = sut.getTimeBuckets(auth, { withPartners: true, isFavorite: true });
-      await expect(response2).rejects.toBeInstanceOf(BadRequestException);
-      await expect(response2).rejects.toThrow(
-        'withPartners is only supported for non-archived, non-trashed, non-favorited, non-locked assets',
-      );
+    it('should allow filtering by favorite on a partner timeline', async () => {
+      const { sut, ctx } = setup();
+      const { user: sharer } = await ctx.newUser();
+      const { user: viewer } = await ctx.newUser();
+      await ctx.newPartner({ sharedById: sharer.id, sharedWithId: viewer.id });
+      const { asset } = await ctx.newAsset({ ownerId: sharer.id });
+      await ctx.newExif({ assetId: asset.id, make: 'Canon' });
+      await ctx.get(AssetRepository).setUserState(viewer.id, [asset.id], { isFavorite: true });
+
+      const auth = factory.auth({ user: viewer });
+      await expect(sut.getTimeBuckets(auth, { userId: sharer.id, isFavorite: true })).resolves.toHaveLength(1);
+      await expect(sut.getTimeBuckets(auth, { userId: sharer.id, isFavorite: false })).resolves.toHaveLength(0);
     });
 
     it('should return error if time bucket is requested with partners asset and trash', async () => {
@@ -105,7 +135,7 @@ describe(TimelineService.name, () => {
       const response = sut.getTimeBuckets(auth, { withPartners: true, isTrashed: true });
       await expect(response).rejects.toBeInstanceOf(BadRequestException);
       await expect(response).rejects.toThrow(
-        'withPartners is only supported for non-archived, non-trashed, non-favorited, non-locked assets',
+        'withPartners is only supported for non-archived, non-trashed, non-locked assets',
       );
     });
 
@@ -152,6 +182,7 @@ describe(TimelineService.name, () => {
       const response = JSON.parse(rawResponse);
       expect(response).toEqual({
         city: [],
+        colorLabel: [],
         country: [],
         createdAt: [],
         duration: [],
@@ -165,6 +196,7 @@ describe(TimelineService.name, () => {
         localOffsetHours: [],
         ownerId: [],
         projectionType: [],
+        rating: [],
         ratio: [],
         status: [],
         thumbhash: [],
@@ -454,6 +486,161 @@ describe(TimelineService.name, () => {
 
         await expect(sut.getTimeBuckets(factory.auth({ user: owner }), { isFavorite: true })).resolves.toHaveLength(0);
       });
+    });
+  });
+
+  describe('rating and color label filters', () => {
+    it('should filter by minimum rating for the owner and expose the effective rating', async () => {
+      const { sut, ctx } = setup();
+      const { owner, assets } = await setupRated(ctx);
+
+      const buckets = await readBucket(sut, owner, { rating: 3 });
+      expect(idsOf(buckets)).toEqual(sorted(assets.five, assets.three));
+      const ratingById = Object.fromEntries(buckets[0].id.map((id: string, i: number) => [id, buckets[0].rating[i]]));
+      expect(ratingById).toEqual({ [assets.five]: 5, [assets.three]: 3 });
+
+      const all = await readBucket(sut, owner);
+      const allById = Object.fromEntries(all[0].id.map((id: string, i: number) => [id, all[0].rating[i]]));
+      expect(allById).toEqual({ [assets.five]: 5, [assets.three]: 3, [assets.none]: null, [assets.rejected]: -1 });
+    });
+
+    it('should filter unrated and combine rating with unrated as OR', async () => {
+      const { sut, ctx } = setup();
+      const { owner, assets } = await setupRated(ctx);
+
+      expect(idsOf(await readBucket(sut, owner, { unrated: true }))).toEqual(sorted(assets.none));
+      expect(idsOf(await readBucket(sut, owner, { rating: 4, unrated: true }))).toEqual(
+        sorted(assets.five, assets.none),
+      );
+    });
+
+    it('should apply the viewer rating for album members and fall back to exif', async () => {
+      const { sut, ctx } = setup();
+      const { member, assets, album } = await setupRated(ctx);
+      await ctx.get(AssetRepository).setUserState(member.id, [assets.none], { rating: 4 });
+      await ctx.get(AssetRepository).setUserState(member.id, [assets.five], { rating: 2 });
+
+      const buckets = await readBucket(sut, member, { albumId: album.id, rating: 3 });
+      expect(idsOf(buckets)).toEqual(sorted(assets.none, assets.three));
+      const ratingById = Object.fromEntries(buckets[0].id.map((id: string, i: number) => [id, buckets[0].rating[i]]));
+      expect(ratingById).toEqual({ [assets.none]: 4, [assets.three]: 3 });
+
+      expect(idsOf(await readBucket(sut, member, { albumId: album.id, unrated: true }))).toEqual([]);
+      await expect(
+        sut.getTimeBuckets(factory.auth({ user: member }), { albumId: album.id, rating: 3 }),
+      ).resolves.toEqual([expect.objectContaining({ count: 2 })]);
+    });
+
+    it('should apply the partner viewer rating on a partner timeline', async () => {
+      const { sut, ctx } = setup();
+      const { owner, partner, assets } = await setupRated(ctx);
+      await ctx.get(AssetRepository).setUserState(partner.id, [assets.none], { rating: 5 });
+
+      const options = { userId: owner.id } as const;
+      expect(idsOf(await readBucket(sut, partner, { ...options, rating: 3 }))).toEqual(
+        sorted(assets.five, assets.three, assets.none),
+      );
+      expect(idsOf(await readBucket(sut, partner, { ...options, unrated: true }))).toEqual([]);
+      const buckets = await readBucket(sut, partner, options);
+      const ratingById = Object.fromEntries(buckets[0].id.map((id: string, i: number) => [id, buckets[0].rating[i]]));
+      expect(ratingById[assets.none]).toBe(5);
+    });
+
+    it('should filter by color label per viewer', async () => {
+      const { sut, ctx } = setup();
+      const { owner, member, assets, album } = await setupRated(ctx);
+      const repo = ctx.get(AssetRepository);
+      await repo.setUserState(owner.id, [assets.five], { colorLabel: AssetColorLabel.Red });
+      await repo.setUserState(member.id, [assets.five], { colorLabel: AssetColorLabel.Blue });
+      await repo.setUserState(member.id, [assets.three], { colorLabel: AssetColorLabel.Red });
+
+      const everything = sorted(...Object.values(assets));
+      const rest = (...excluded: string[]) => everything.filter((id) => !excluded.includes(id));
+
+      expect(idsOf(await readBucket(sut, owner, { colorLabels: [AssetColorLabel.Red] }))).toEqual([assets.five]);
+      expect(idsOf(await readBucket(sut, owner, { colorLabels: ['none'] }))).toEqual(rest(assets.five));
+      expect(idsOf(await readBucket(sut, owner, { colorLabels: [AssetColorLabel.Red, 'none'] }))).toEqual(everything);
+
+      const memberOptions = { albumId: album.id } as const;
+      expect(idsOf(await readBucket(sut, member, { ...memberOptions, colorLabels: [AssetColorLabel.Red] }))).toEqual([
+        assets.three,
+      ]);
+      expect(idsOf(await readBucket(sut, member, { ...memberOptions, colorLabels: [AssetColorLabel.Blue] }))).toEqual([
+        assets.five,
+      ]);
+      expect(idsOf(await readBucket(sut, member, { ...memberOptions, colorLabels: ['none'] }))).toEqual(
+        rest(assets.five, assets.three),
+      );
+
+      const buckets = await readBucket(sut, member, memberOptions);
+      const colorById = Object.fromEntries(
+        buckets[0].id.map((id: string, i: number) => [id, buckets[0].colorLabel[i]]),
+      );
+      expect(colorById).toEqual({
+        [assets.five]: 'blue',
+        [assets.three]: 'red',
+        [assets.none]: null,
+        [assets.rejected]: null,
+      });
+      const ownerBuckets = await readBucket(sut, owner);
+      expect(ownerBuckets[0].colorLabel[ownerBuckets[0].id.indexOf(assets.five)]).toBe('red');
+    });
+
+    it('should count buckets with the filters applied', async () => {
+      const { sut, ctx } = setup();
+      const { owner, assets } = await setupRated(ctx);
+      await ctx.get(AssetRepository).setUserState(owner.id, [assets.five], { colorLabel: AssetColorLabel.Green });
+      const auth = factory.auth({ user: owner });
+
+      await expect(sut.getTimeBuckets(auth, {})).resolves.toEqual([expect.objectContaining({ count: 4 })]);
+      await expect(sut.getTimeBuckets(auth, { rating: 3 })).resolves.toEqual([expect.objectContaining({ count: 2 })]);
+      await expect(sut.getTimeBuckets(auth, { rating: 3, unrated: true })).resolves.toEqual([
+        expect.objectContaining({ count: 3 }),
+      ]);
+      await expect(sut.getTimeBuckets(auth, { unrated: true })).resolves.toEqual([
+        expect.objectContaining({ count: 1 }),
+      ]);
+      await expect(sut.getTimeBuckets(auth, { colorLabels: [AssetColorLabel.Green] })).resolves.toEqual([
+        expect.objectContaining({ count: 1 }),
+      ]);
+      await expect(sut.getTimeBuckets(auth, { colorLabels: [AssetColorLabel.Red] })).resolves.toEqual([]);
+      await expect(sut.getTimeBuckets(auth, { colorLabels: ['none'] })).resolves.toEqual([
+        expect.objectContaining({ count: 3 }),
+      ]);
+    });
+
+    it('should ignore a stale owner mirror row for rating and favorites', async () => {
+      const { sut, ctx } = setup();
+      const { owner, assets } = await setupRated(ctx);
+      await ctx.get(AssetRepository).setUserState(owner.id, [assets.none], { isFavorite: true, rating: 5 });
+
+      expect(idsOf(await readBucket(sut, owner, { rating: 3 }))).toEqual(sorted(assets.five, assets.three));
+      expect(idsOf(await readBucket(sut, owner, { unrated: true }))).toEqual([assets.none]);
+      expect(await readBucket(sut, owner, { isFavorite: true })).toEqual([]);
+    });
+
+    it('should use the exif rating and no color for shared links', async () => {
+      const { sut, ctx } = setup();
+      const { owner, member, assets, album } = await setupRated(ctx);
+      await ctx.get(AssetRepository).setUserState(owner.id, [assets.five], { colorLabel: AssetColorLabel.Red });
+      await ctx.get(AssetRepository).setUserState(member.id, [assets.none], { rating: 5 });
+      const { id: sharedLinkId } = await ctx.get(SharedLinkRepository).create({
+        allowUpload: false,
+        key: Buffer.from(`rating-${owner.id}`),
+        type: SharedLinkType.Album,
+        userId: owner.id,
+        albumId: album.id,
+      });
+      const auth = factory.auth({ user: owner, sharedLink: { id: sharedLinkId, showExif: true } });
+
+      const rated = await sut.getTimeBucket(auth, {
+        albumId: album.id,
+        timeBucket: '2024-03-01',
+        rating: 3,
+      });
+      const parsed = JSON.parse(rated);
+      expect(parsed.id.toSorted()).toEqual(sorted(assets.five, assets.three));
+      expect(parsed.colorLabel).toEqual([null, null]);
     });
   });
 
