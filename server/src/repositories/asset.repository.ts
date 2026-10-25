@@ -9,6 +9,7 @@ import {
   type ShallowDehydrateObject,
   UpdateResult,
   type Updateable,
+  expressionBuilder,
   sql,
 } from 'kysely';
 import { jsonArrayFrom } from 'kysely/helpers/postgres';
@@ -147,6 +148,15 @@ type UpsertExifOptions = {
 
 const distinctLocked = <T extends LockableProperty[] | null>(eb: ExpressionBuilder<DB, 'asset_exif'>, columns: T) =>
   sql<T>`nullif(array(select distinct unnest(${eb.ref('asset_exif.lockedProperties')} || ${columns})), '{}')`;
+
+// shared links act as the link creator, whose personal favorites must not leak
+const viewerFavorite = (auth: AuthDto) => {
+  if (!auth.sharedLink) {
+    return isFavoriteFor(auth.user.id);
+  }
+  const eb = expressionBuilder<DB, 'asset'>();
+  return eb.and([eb('asset.ownerId', '=', auth.user.id), eb('asset.isFavorite', '=', true)]);
+};
 
 const getBoundingCircle = (bbox: BoundingBox) => {
   const { west, south, east, north } = bbox;
@@ -847,7 +857,7 @@ export class AssetRepository {
               if (options.personId) {
                 alternatives.push(inSharedAlbum(auth.user.id, 'asset.id'));
               }
-              if (options.isFavorite === true) {
+              if (options.isFavorite === true && !auth.sharedLink) {
                 // the favorites view also lists assets other users shared with the viewer
                 alternatives.push(isSharedFavoriteFor(auth.user.id));
               }
@@ -855,7 +865,10 @@ export class AssetRepository {
             }),
           )
           .$if(options.isFavorite !== undefined, (qb) =>
-            qb.where((eb) => (options.isFavorite ? isFavoriteFor(auth.user.id) : eb.not(isFavoriteFor(auth.user.id)))),
+            qb.where((eb) => {
+              const favorite = viewerFavorite(auth);
+              return options.isFavorite ? favorite : eb.not(favorite);
+            }),
           )
           .$if(!!options.assetType, (qb) => qb.where('asset.type', '=', options.assetType!))
           .$if(options.isDuplicate !== undefined, (qb) =>
@@ -885,11 +898,7 @@ export class AssetRepository {
             'asset.duration',
             'asset.id',
             'asset.visibility',
-            // shared links act as the link creator, whose personal favorites must not leak
-            (auth.sharedLink
-              ? eb.and([eb('asset.ownerId', '=', auth.user.id), eb('asset.isFavorite', '=', true)])
-              : isFavoriteFor(auth.user.id)
-            ).as('isFavorite'),
+            viewerFavorite(auth).as('isFavorite'),
             sql`asset.type = 'IMAGE'`.as('isImage'),
             sql`asset."deletedAt" is not null`.as('isTrashed'),
             'asset.livePhotoVideoId',
@@ -952,7 +961,7 @@ export class AssetRepository {
               if (options.personId) {
                 alternatives.push(inSharedAlbum(auth.user.id, 'asset.id'));
               }
-              if (options.isFavorite === true) {
+              if (options.isFavorite === true && !auth.sharedLink) {
                 // the favorites view also lists assets other users shared with the viewer
                 alternatives.push(isSharedFavoriteFor(auth.user.id));
               }
@@ -960,7 +969,10 @@ export class AssetRepository {
             }),
           )
           .$if(options.isFavorite !== undefined, (qb) =>
-            qb.where((eb) => (options.isFavorite ? isFavoriteFor(auth.user.id) : eb.not(isFavoriteFor(auth.user.id)))),
+            qb.where((eb) => {
+              const favorite = viewerFavorite(auth);
+              return options.isFavorite ? favorite : eb.not(favorite);
+            }),
           )
           .$if(!!options.withStacked, (qb) =>
             qb
