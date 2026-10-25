@@ -38,6 +38,8 @@ import {
   asUuid,
   hasPeople,
   inSharedAlbum,
+  isFavoriteFor,
+  isSharedFavoriteFor,
   removeUndefinedKeys,
   truncatedDate,
   unnest,
@@ -835,10 +837,20 @@ export class AssetRepository {
             qb.where((eb) => {
               // TODO this should become a shared `hasAccess` style helper once implement sharing in more places
               const isOwner = eb('asset.ownerId', '=', anyUuid(options.userIds!));
-              return options.personId ? eb.or([isOwner, inSharedAlbum(auth.user.id, 'asset.id')]) : isOwner;
+              const alternatives = [];
+              if (options.personId) {
+                alternatives.push(inSharedAlbum(auth.user.id, 'asset.id'));
+              }
+              if (options.isFavorite === true) {
+                // the favorites view also lists assets other users shared with the viewer
+                alternatives.push(isSharedFavoriteFor(auth.user.id));
+              }
+              return alternatives.length > 0 ? eb.or([isOwner, ...alternatives]) : isOwner;
             }),
           )
-          .$if(options.isFavorite !== undefined, (qb) => qb.where('asset.isFavorite', '=', options.isFavorite!))
+          .$if(options.isFavorite !== undefined, (qb) =>
+            qb.where((eb) => (options.isFavorite ? isFavoriteFor(auth.user.id) : eb.not(isFavoriteFor(auth.user.id)))),
+          )
           .$if(!!options.assetType, (qb) => qb.where('asset.type', '=', options.assetType!))
           .$if(options.isDuplicate !== undefined, (qb) =>
             qb.where('asset.duplicateId', options.isDuplicate ? 'is not' : 'is', null),
@@ -867,7 +879,7 @@ export class AssetRepository {
             'asset.duration',
             'asset.id',
             'asset.visibility',
-            sql`asset."isFavorite" and asset."ownerId" = ${auth.user.id}`.as('isFavorite'),
+            isFavoriteFor(auth.user.id).as('isFavorite'),
             sql`asset.type = 'IMAGE'`.as('isImage'),
             sql`asset."deletedAt" is not null`.as('isTrashed'),
             'asset.livePhotoVideoId',
@@ -926,10 +938,20 @@ export class AssetRepository {
           .$if(!!options.userIds, (qb) =>
             qb.where((eb) => {
               const isOwner = eb('asset.ownerId', '=', anyUuid(options.userIds!));
-              return options.personId ? eb.or([isOwner, inSharedAlbum(auth.user.id, 'asset.id')]) : isOwner;
+              const alternatives = [];
+              if (options.personId) {
+                alternatives.push(inSharedAlbum(auth.user.id, 'asset.id'));
+              }
+              if (options.isFavorite === true) {
+                // the favorites view also lists assets other users shared with the viewer
+                alternatives.push(isSharedFavoriteFor(auth.user.id));
+              }
+              return alternatives.length > 0 ? eb.or([isOwner, ...alternatives]) : isOwner;
             }),
           )
-          .$if(options.isFavorite !== undefined, (qb) => qb.where('asset.isFavorite', '=', options.isFavorite!))
+          .$if(options.isFavorite !== undefined, (qb) =>
+            qb.where((eb) => (options.isFavorite ? isFavoriteFor(auth.user.id) : eb.not(isFavoriteFor(auth.user.id)))),
+          )
           .$if(!!options.withStacked, (qb) =>
             qb
               .where((eb) =>

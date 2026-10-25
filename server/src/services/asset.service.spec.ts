@@ -92,6 +92,28 @@ describe(AssetService.name, () => {
       );
     });
 
+    it('should report viewer favorite state for an asset the user does not own', async () => {
+      const asset = AssetFactory.create();
+      mocks.access.asset.checkAlbumAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getById.mockResolvedValue(getForAsset(asset));
+      mocks.asset.getFavoriteIds.mockResolvedValue(new Set([asset.id]));
+
+      const result = await sut.get(authStub.admin, asset.id);
+
+      expect(mocks.asset.getFavoriteIds).toHaveBeenCalledWith(authStub.admin.user.id, [asset.id]);
+      expect(result).toMatchObject({ id: asset.id, isFavorite: true });
+    });
+
+    it('should not look up shared favorites for owned assets', async () => {
+      const asset = AssetFactory.from().owner(authStub.admin.user).build();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getById.mockResolvedValue(getForAsset(asset));
+
+      await sut.get(authStub.admin, asset.id);
+
+      expect(mocks.asset.getFavoriteIds).not.toHaveBeenCalled();
+    });
+
     it('should allow shared link access', async () => {
       const asset = AssetFactory.create();
       mocks.access.asset.checkSharedLinkAccess.mockResolvedValue(new Set([asset.id]));
