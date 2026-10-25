@@ -13,7 +13,8 @@ const TimeBucketQueryBaseSchema = z
     isFavorite: stringToBool
       .optional()
       .describe('Filter by favorite status (true for favorites only, false for non-favorites only)'),
-    rating: z
+    rating: z.coerce
+      .number()
       .int()
       .min(1)
       .max(5)

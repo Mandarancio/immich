@@ -422,7 +422,7 @@ export function applyStateFilters<TB extends keyof DB, O>(
 
   if (colorLabels && colorLabels.length > 0) {
     if (viewer.sharedLink) {
-      // shared links never expose a color label
+      // no label is ever visible to a shared link, so 'none' matches every asset and any color matches nothing
       conditions.push(colorLabels.includes('none') ? sql<SqlBool>`true` : sql<SqlBool>`false`);
     } else {
       conditions.push(colorLabelsPredicate(viewer.userId, colorLabels));
