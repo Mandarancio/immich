@@ -1,8 +1,11 @@
-import { getAssetInfo } from '@immich/sdk';
+import { AssetColorLabel, getAssetInfo, updateAsset, type UserConfigDto } from '@immich/sdk';
 import { toastManager } from '@immich/ui';
 import { vitest } from 'vitest';
 import { authManager } from '$lib/managers/auth-manager.svelte';
-import { getAssetActions, handleDownloadAsset } from '$lib/services/asset.service';
+import { eventManager } from '$lib/managers/event-manager.svelte';
+import { queryClient } from '$lib/queries/client';
+import { getUserConfigQuery } from '$lib/queries/config-user.query';
+import { getAssetActions, handleDownloadAsset, handleRate, handleSetColorLabel } from '$lib/services/asset.service';
 import { setSharedLink } from '$lib/utils';
 import { getFormatter } from '$lib/utils/i18n';
 import { assetFactory } from '@test-data/factories/asset-factory';
@@ -13,6 +16,7 @@ import { userAdminFactory } from '@test-data/factories/user-factory';
 vitest.mock('@immich/ui', () => ({
   toastManager: {
     primary: vitest.fn(),
+    info: vitest.fn(),
   },
 }));
 
@@ -81,6 +85,38 @@ describe('AssetService', () => {
       expect(assetActions.Favorite.$if?.()).toStrictEqual(false);
     });
 
+    describe('Rate', () => {
+      beforeEach(() => {
+        authManager.setPreferences(preferencesFactory.build({ ratings: { enabled: true } }));
+      });
+
+      it('should offer rating to the owner', () => {
+        authManager.setUser(userAdminFactory.build({ id: 'owner' }));
+        const asset = assetFactory.build({ ownerId: 'owner' });
+        expect(getAssetActions(() => '', asset).Rate.$if?.()).toStrictEqual(true);
+      });
+
+      it('should offer rating to a logged-in user who does not own the asset', () => {
+        authManager.setUser(userAdminFactory.build({ id: 'viewer' }));
+        const asset = assetFactory.build({ ownerId: 'someone-else' });
+        expect(getAssetActions(() => '', asset).Rate.$if?.()).toStrictEqual(true);
+      });
+
+      it('should not offer rating on a shared link', () => {
+        authManager.setUser(userAdminFactory.build({ id: 'viewer' }));
+        setSharedLink(sharedLinkFactory.build());
+        const asset = assetFactory.build({ ownerId: 'someone-else' });
+        expect(getAssetActions(() => '', asset).Rate.$if?.()).toStrictEqual(false);
+      });
+
+      it('should not offer rating when ratings are disabled', () => {
+        authManager.setPreferences(preferencesFactory.build({ ratings: { enabled: false } }));
+        authManager.setUser(userAdminFactory.build({ id: 'viewer' }));
+        const asset = assetFactory.build({ ownerId: 'someone-else' });
+        expect(getAssetActions(() => '', asset).Rate.$if?.()).toStrictEqual(false);
+      });
+    });
+
     it('should not allow shared link downloads if the user does not own the asset and shared link downloads are disabled', () => {
       const ownerId = 'owner';
       const user = userAdminFactory.build({ id: 'non-owner' });
@@ -119,6 +155,81 @@ describe('AssetService', () => {
       expect($t).toHaveBeenNthCalledWith(1, 'downloading_asset_filename', { values: { filename: 'asset.heic' } });
       expect($t).toHaveBeenNthCalledWith(2, 'downloading_asset_filename', { values: { filename: 'asset-motion.mov' } });
       expect(toastManager.primary).toHaveBeenCalledWith('formatter');
+    });
+  });
+
+  describe('handleRate', () => {
+    beforeEach(() => {
+      vitest.mocked(getFormatter).mockResolvedValue(vitest.fn().mockReturnValue('formatter'));
+      vitest.mocked(updateAsset).mockReset();
+    });
+
+    it('should send the rating and emit the update', async () => {
+      const asset = assetFactory.build({ exifInfo: { rating: null } });
+      const updated = assetFactory.build({ id: asset.id, exifInfo: { rating: 3 } });
+      vitest.mocked(updateAsset).mockResolvedValue(updated);
+      const emit = vitest.spyOn(eventManager, 'emit');
+
+      await handleRate(asset, 3);
+
+      expect(updateAsset).toHaveBeenCalledWith({ id: asset.id, updateAssetDto: { rating: 3 } });
+      expect(emit).toHaveBeenCalledWith('AssetUpdate', updated);
+    });
+
+    it('should clear the rating with 0', async () => {
+      const asset = assetFactory.build({ exifInfo: { rating: 2 } });
+      vitest.mocked(updateAsset).mockResolvedValue(asset);
+
+      await handleRate(asset, 0);
+
+      expect(updateAsset).toHaveBeenCalledWith({ id: asset.id, updateAssetDto: { rating: null } });
+    });
+
+    it('should never send -1 from the UI', async () => {
+      const asset = assetFactory.build({ exifInfo: { rating: null } });
+
+      await handleRate(asset, -1);
+
+      expect(updateAsset).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('handleSetColorLabel', () => {
+    beforeEach(() => {
+      vitest.mocked(getFormatter).mockResolvedValue(vitest.fn().mockReturnValue('formatter'));
+      vitest.mocked(updateAsset).mockReset();
+    });
+
+    it('should send the color label and emit the update with the response', async () => {
+      const asset = assetFactory.build();
+      const updated = { ...asset, colorLabel: AssetColorLabel.Green };
+      vitest.mocked(updateAsset).mockResolvedValue(updated);
+      const emit = vitest.spyOn(eventManager, 'emit');
+
+      await handleSetColorLabel(asset, AssetColorLabel.Green);
+
+      expect(updateAsset).toHaveBeenCalledWith({ id: asset.id, updateAssetDto: { colorLabel: AssetColorLabel.Green } });
+      expect(emit).toHaveBeenCalledWith('AssetUpdate', updated);
+    });
+
+    it('should clear the color label with null', async () => {
+      const asset = assetFactory.build();
+      vitest.mocked(updateAsset).mockResolvedValue(asset);
+
+      await handleSetColorLabel(asset, null);
+
+      expect(updateAsset).toHaveBeenCalledWith({ id: asset.id, updateAssetDto: { colorLabel: null } });
+    });
+
+    it('should not emit when the update fails', async () => {
+      const asset = assetFactory.build();
+      vitest.mocked(updateAsset).mockRejectedValue(new Error('nope'));
+      const emit = vitest.spyOn(eventManager, 'emit');
+      emit.mockClear();
+
+      await handleSetColorLabel(asset, AssetColorLabel.Red);
+
+      expect(emit).not.toHaveBeenCalledWith('AssetUpdate', expect.anything());
     });
   });
 });

@@ -1,4 +1,5 @@
 import {
+  AssetColorLabel,
   AssetJobName,
   AssetMediaSize,
   AssetTypeEnum,
@@ -150,6 +151,8 @@ export const getAssetActions = (
   const isOwner = !!(authUser && authUser.id === asset.ownerId);
   // any logged-in user who can see the asset may favorite it; shared link guests may not
   const canFavorite = !!authUser && (isOwner || !sharedLink);
+  // rating and color labels follow the same rule as favorites (per-user state)
+  const canRate = canFavorite;
   const isAlbumOwner = !!(authUser && authUser.id === album?.albumUsers[0].user.id);
   const smartSearchEnabled = featureFlagsManager.value.smartSearch;
 
@@ -224,7 +227,7 @@ export const getAssetActions = (
   const Rate: ActionItem = {
     title: $t('rate_asset'),
     description: $t('rate_asset_description'),
-    $if: () => isOwner && authManager.preferences.ratings.enabled,
+    $if: () => canRate && authManager.preferences.ratings.enabled,
     onAction: ({ event }) => handleRate(asset, event instanceof KeyboardEvent ? Number(event.key) : NaN),
     shortcuts: [0, 1, 2, 3, 4, 5].map((key) => ({ key: String(key) })),
   };
@@ -466,11 +469,16 @@ const handleUnfavorite = async (asset: AssetResponseDto) => {
   }
 };
 
-const handleRate = async (asset: AssetResponseDto, rating: number) => {
+export const handleRate = async (asset: AssetResponseDto, rating: number) => {
   const $t = await getFormatter();
 
   if (Number.isNaN(rating)) {
     toastManager.info($t('rate_asset_description'));
+    return;
+  }
+
+  // the UI only offers 0-5; reject (-1) is not available from here, and never for non-owners
+  if (rating < 0) {
     return;
   }
 
@@ -484,6 +492,17 @@ const handleRate = async (asset: AssetResponseDto, rating: number) => {
     eventManager.emit('AssetUpdate', response);
   } catch (error) {
     handleError(error, $t('errors.unable_to_set_rating'));
+  }
+};
+
+export const handleSetColorLabel = async (asset: AssetResponseDto, colorLabel: AssetColorLabel | null) => {
+  const $t = await getFormatter();
+
+  try {
+    const response = await updateAsset({ id: asset.id, updateAssetDto: { colorLabel } });
+    eventManager.emit('AssetUpdate', response);
+  } catch (error) {
+    handleError(error, $t('errors.cant_apply_changes'));
   }
 };
 
