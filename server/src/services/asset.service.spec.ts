@@ -217,6 +217,44 @@ describe(AssetService.name, () => {
       );
     });
 
+    it('should mirror an owner favorite row when favoriting an owned asset', async () => {
+      const asset = AssetFactory.create();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getById.mockResolvedValue(getForAsset(asset));
+      mocks.asset.update.mockResolvedValue(getForAsset(asset));
+
+      await sut.update(authStub.admin, asset.id, { isFavorite: true });
+
+      expect(mocks.asset.update).toHaveBeenCalledWith({ id: asset.id, isFavorite: true });
+      expect(mocks.asset.addFavorites).toHaveBeenCalledWith(authStub.admin.user.id, [asset.id]);
+      expect(mocks.asset.removeFavorites).not.toHaveBeenCalled();
+    });
+
+    it('should remove the owner favorite row when unfavoriting an owned asset', async () => {
+      const asset = AssetFactory.create();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getById.mockResolvedValue(getForAsset(asset));
+      mocks.asset.update.mockResolvedValue(getForAsset(asset));
+
+      await sut.update(authStub.admin, asset.id, { isFavorite: false });
+
+      expect(mocks.asset.update).toHaveBeenCalledWith({ id: asset.id, isFavorite: false });
+      expect(mocks.asset.removeFavorites).toHaveBeenCalledWith(authStub.admin.user.id, [asset.id]);
+      expect(mocks.asset.addFavorites).not.toHaveBeenCalled();
+    });
+
+    it('should not touch owner favorite rows when isFavorite is not updated', async () => {
+      const asset = AssetFactory.create();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getById.mockResolvedValue(getForAsset(asset));
+      mocks.asset.update.mockResolvedValue(getForAsset(asset));
+
+      await sut.update(authStub.admin, asset.id, { visibility: AssetVisibility.Archive });
+
+      expect(mocks.asset.addFavorites).not.toHaveBeenCalled();
+      expect(mocks.asset.removeFavorites).not.toHaveBeenCalled();
+    });
+
     it('should favorite a shared-album asset the user does not own', async () => {
       const asset = AssetFactory.create();
       mocks.access.asset.checkAlbumAccess.mockResolvedValue(new Set([asset.id]));
@@ -475,7 +513,47 @@ describe(AssetService.name, () => {
       await sut.updateAll(auth, { ids: ['owned', 'shared'], isFavorite: true });
 
       expect(mocks.asset.addFavorites).toHaveBeenCalledWith(auth.user.id, ['shared']);
+      expect(mocks.asset.addFavorites).toHaveBeenCalledWith(auth.user.id, ['owned']);
       expect(mocks.asset.updateAll).toHaveBeenCalledWith(['owned'], { isFavorite: true });
+    });
+
+    it('should mirror owner favorite rows for owned assets', async () => {
+      const auth = AuthFactory.create();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1', 'asset-2']));
+
+      await sut.updateAll(auth, { ids: ['asset-1', 'asset-2'], isFavorite: true });
+
+      expect(mocks.asset.updateAll).toHaveBeenCalledWith(['asset-1', 'asset-2'], { isFavorite: true });
+      expect(mocks.asset.addFavorites).toHaveBeenCalledWith(auth.user.id, ['asset-1', 'asset-2']);
+    });
+
+    it('should remove owner favorite rows when unfavoriting owned assets', async () => {
+      const auth = AuthFactory.create();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1']));
+
+      await sut.updateAll(auth, { ids: ['asset-1'], isFavorite: false });
+
+      expect(mocks.asset.updateAll).toHaveBeenCalledWith(['asset-1'], { isFavorite: false });
+      expect(mocks.asset.removeFavorites).toHaveBeenCalledWith(auth.user.id, ['asset-1']);
+    });
+
+    it('should mirror owner favorite rows when combined with other fields', async () => {
+      const auth = AuthFactory.create();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1']));
+
+      await sut.updateAll(auth, { ids: ['asset-1'], isFavorite: true, visibility: AssetVisibility.Archive });
+
+      expect(mocks.asset.addFavorites).toHaveBeenCalledWith(auth.user.id, ['asset-1']);
+    });
+
+    it('should not touch owner favorite rows when isFavorite is not updated', async () => {
+      const auth = AuthFactory.create();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1']));
+
+      await sut.updateAll(auth, { ids: ['asset-1'], visibility: AssetVisibility.Archive });
+
+      expect(mocks.asset.addFavorites).not.toHaveBeenCalled();
+      expect(mocks.asset.removeFavorites).not.toHaveBeenCalled();
     });
 
     it('should only write shared favorites when every id is non-owned', async () => {

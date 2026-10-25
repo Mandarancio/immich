@@ -15,7 +15,8 @@ Two independent features, specified together but implementable and shippable sep
 
 - Favorites for non-owned photos are **per user** (not a shared flag on the asset).
 - Anyone with `Permission.AssetRead` on the asset may favorite it: owner, shared-album member (viewers included), or partner. No new access logic.
-- The `asset.isFavorite` column stays the source of truth for a user's own photos. No data migration, no column removal.
+- The `asset.isFavorite` column stays the source of truth for a user's own photos, so the Android app, sync streams and every code path that writes the column directly (upload, sidecar/metadata import, copy, old clients) keep working. No column removal.
+- `asset_favorite` also mirrors the owner's favorites: the migration backfills one row `(ownerId, id)` for every asset with `isFavorite = true`, and `PUT /assets` keeps the mirror in sync afterwards. The mirror is never read for owned assets, because the column can change behind it.
 - Mobile/sync streams keep reading the raw column. Mobile shows non-owned favorites as unfavorited until a follow-up.
 
 ### Data model
@@ -28,16 +29,20 @@ New table `asset_favorite`:
 | assetId   | uuid        | FK asset, ON DELETE CASCADE, PK part 2 |
 | createdAt | timestamptz | default now()                          |
 
-Index on `assetId`. Contains only favorites for assets the user does not own.
+Index on `assetId`. Rows come in two kinds:
+
+- **Non-owned assets** (`asset.ownerId <> userId`): the source of truth for that user's favorite.
+- **Owned assets** (`asset.ownerId = userId`): a mirror of `asset.isFavorite`. It is backfilled by the migration (`INSERT ... SELECT "ownerId", "id" FROM asset WHERE "isFavorite" = true ON CONFLICT DO NOTHING`, including archived and trashed assets; `down` just drops the table) and kept in sync by `PUT /assets/:id` and `PUT /assets`. Other writers of the column do not touch it, so an owner row can be missing or stale; reads must ignore it.
 
 ### Write path
 
 `PUT /assets/:id` and bulk `PUT /assets` (`server/src/services/asset.service.ts`):
 
 - If the DTO contains only `isFavorite`, split ids by ownership:
-  - owned ids -> existing update path (column, events, `updatedAt`);
+  - owned ids -> existing update path (column, events, `updatedAt`), then the owner row is mirrored (insert on favorite, delete on unfavorite);
   - non-owned ids with `AssetRead` -> insert/delete rows in `asset_favorite`. No asset row change, no `AssetUpdate` event, no `updatedAt` bump (keeps sync untouched).
-- Any other field in the DTO still requires ownership.
+- Any other field in the DTO still requires ownership. When such an owner-only request also carries `isFavorite`, the owner row is mirrored the same way.
+- Requests that do not carry `isFavorite` never touch `asset_favorite`.
 - Ids that are neither owned nor readable fail with the usual access error.
 
 ### Read path
@@ -46,8 +51,10 @@ A shared Kysely helper `isFavoriteFor(eb, userId)`:
 
 ```
 (asset.ownerId = :viewer AND asset.isFavorite)
-OR EXISTS (SELECT 1 FROM asset_favorite WHERE userId = :viewer AND assetId = asset.id)
+OR (asset.ownerId <> :viewer AND EXISTS (SELECT 1 FROM asset_favorite WHERE userId = :viewer AND assetId = asset.id))
 ```
+
+For owned assets only the column counts, so a stale or missing owner row can neither make an asset appear favorited when the column is false nor hide one the column marks as favorite. `isSharedFavoriteFor` (the extra "also list favorites shared with me" branch of the favorites timeline, search and statistics) likewise requires `asset.ownerId <> :viewer`; non-owned behavior, including hiding stale rows once access is lost, is unchanged. `getViewerFavoriteIds` only looks up non-owned ids, and shared links read the column only.
 
 Replaces raw `asset.isFavorite` reads in:
 
@@ -72,7 +79,7 @@ Generated query snapshots (`server/src/queries/*.sql`) must be regenerated.
 ### Tests
 
 - Server unit (`asset.service.spec.ts`): owner favorite; non-owner via album; non-owner via partner; no access rejected; non-owner cannot update other fields.
-- Medium (real DB): favorite filter and timeline bucket flag for owner, album member, partner.
+- Medium (real DB): favorite filter and timeline bucket flag for owner, album member, partner; owner favoriting through `PUT /assets` sets the column and the mirror row; a stale owner row is ignored by timeline and statistics; the migration backfill (including trashed and archived favorites) and its `down`/`up` round trip.
 - E2E (`e2e/src/api/specs/asset.e2e-spec.ts`): album member favorites a shared photo and sees it under Favorites; owner's own state is unchanged.
 - Web unit: toggle visibility.
 

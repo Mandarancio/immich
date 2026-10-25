@@ -304,18 +304,22 @@ export function inSharedAlbum(userId: string, assetId: 'asset.id' | 'asset_face.
   );
 }
 
-// the viewer's favorite state: the owner's own flag, or a per-user row for assets shared with them
+// the viewer's favorite state: the owner's own column is authoritative for owned assets, a per-user row for the rest;
+// owner rows in asset_favorite are only a mirror and are never read, as other code paths write the column directly
 export function isFavoriteFor(userId: string) {
   const eb = expressionBuilder<DB, 'asset'>();
   return eb.or([
     eb.and([eb('asset.ownerId', '=', userId), eb('asset.isFavorite', '=', true)]),
-    eb.exists(
-      eb
-        .selectFrom('asset_favorite')
-        .select(sql.lit(1).as('exists'))
-        .whereRef('asset_favorite.assetId', '=', 'asset.id')
-        .where('asset_favorite.userId', '=', userId),
-    ),
+    eb.and([
+      eb('asset.ownerId', '!=', userId),
+      eb.exists(
+        eb
+          .selectFrom('asset_favorite')
+          .select(sql.lit(1).as('exists'))
+          .whereRef('asset_favorite.assetId', '=', 'asset.id')
+          .where('asset_favorite.userId', '=', userId),
+      ),
+    ]),
   ]);
 }
 
@@ -344,10 +348,12 @@ export function isSharedWith(userId: string) {
   ]);
 }
 
-// a favorite row only counts while the user still has access, so stale rows stay hidden
+// a favorite row only counts while the user still has access, so stale rows stay hidden;
+// owned assets never qualify, their favorite state is the asset column
 export function isSharedFavoriteFor(userId: string) {
   const eb = expressionBuilder<DB, 'asset'>();
   return eb.and([
+    eb('asset.ownerId', '!=', userId),
     eb.exists(
       eb
         .selectFrom('asset_favorite')
