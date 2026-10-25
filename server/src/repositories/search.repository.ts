@@ -58,6 +58,8 @@ export interface SearchRelationOptions extends SearchOneToOneRelationOptions {
   withPeople?: boolean;
   /** whose version of the people to select, required when selecting faces or people */
   viewingUserId?: string;
+  /** the viewer is a shared link visitor acting as `viewingUserId`, who must not see that user's rating or color */
+  sharedLink?: boolean;
 }
 
 export interface SearchDateOptions {
@@ -142,6 +144,8 @@ export interface AssetSearchScope {
   lockedOwnerId: string;
   /** whose version of the people to select, required when selecting faces or people */
   viewingUserId?: string;
+  /** the viewer is a shared link visitor acting as `viewingUserId`, who must not see that user's rating or color */
+  sharedLink?: boolean;
 }
 
 export interface AssetSearchBuilderV3Options {
@@ -161,7 +165,7 @@ export type SmartSearchOptions = SearchDateOptions &
   SearchUserIdOptions &
   SearchPeopleOptions &
   SearchTagOptions &
-  SearchOcrOptions & { visibility?: AssetVisibility | 'not-locked'; viewingUserId?: string };
+  SearchOcrOptions & { visibility?: AssetVisibility | 'not-locked'; viewingUserId?: string; sharedLink?: boolean };
 
 export type LargeAssetSearchOptions = AssetSearchOptions & { minFileSize?: number };
 

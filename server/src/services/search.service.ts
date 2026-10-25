@@ -106,6 +106,7 @@ export class SearchService extends BaseService {
         visibility: dto.visibility ?? (auth.session?.hasElevatedPermission ? undefined : 'not-locked'),
         userIds,
         viewingUserId: auth.user.id,
+        sharedLink: !!auth.sharedLink,
         orderDirection: dto.order ?? AssetOrder.Desc,
       },
     );
@@ -128,6 +129,7 @@ export class SearchService extends BaseService {
       visibility: dto.visibility ?? (auth.session?.hasElevatedPermission ? undefined : 'not-locked'),
       userIds,
       viewingUserId: auth.user.id,
+      sharedLink: !!auth.sharedLink,
     });
   }
 
@@ -146,6 +148,7 @@ export class SearchService extends BaseService {
       visibility: dto.visibility ?? (auth.session?.hasElevatedPermission ? undefined : 'not-locked'),
       userIds,
       viewingUserId: auth.user.id,
+      sharedLink: !!auth.sharedLink,
     });
     return this.mapAssets(auth, items);
   }
@@ -161,6 +164,7 @@ export class SearchService extends BaseService {
       visibility: dto.visibility ?? (auth.session?.hasElevatedPermission ? undefined : 'not-locked'),
       userIds,
       viewingUserId: auth.user.id,
+      sharedLink: !!auth.sharedLink,
     });
     return this.mapAssets(auth, items);
   }
@@ -195,6 +199,7 @@ export class SearchService extends BaseService {
         ...dto,
         userIds,
         viewingUserId: auth.user.id,
+        sharedLink: !!auth.sharedLink,
         embedding,
         visibility: dto.visibility ?? (auth.session?.hasElevatedPermission ? undefined : 'not-locked'),
       },
@@ -330,7 +335,10 @@ export class SearchService extends BaseService {
       albumIds.length > 0 ? this.requireAccess({ auth, ids: albumIds, permission: Permission.AlbumRead }) : undefined,
     ]);
 
-    return { filter: effectiveFilter, scope: { userIds, lockedOwnerId: auth.user.id, viewingUserId: auth.user.id } };
+    return {
+      filter: effectiveFilter,
+      scope: { userIds, lockedOwnerId: auth.user.id, viewingUserId: auth.user.id, sharedLink: !!auth.sharedLink },
+    };
   }
 
   private async resolveEmbedding(

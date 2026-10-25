@@ -394,6 +394,15 @@ export function viewerColorLabel({ userId, sharedLink }: StateViewer) {
   return sharedLink ? sql<AssetColorLabel | null>`null::text` : colorLabelFor(userId);
 }
 
+// color label filter from the viewer's point of view
+export function viewerColorLabelsPredicate(viewer: StateViewer, labels: Array<AssetColorLabel | 'none'>) {
+  if (viewer.sharedLink) {
+    // no label is ever visible to a shared link, so 'none' matches every asset and any color matches nothing
+    return sql<SqlBool>`${sql.lit(labels.includes('none'))}`;
+  }
+  return colorLabelsPredicate(viewer.userId, labels);
+}
+
 // favorite, rating and color label filters, evaluated from the viewer's point of view;
 // `rating` (at least n stars) and `unrated` are combined as an OR
 export function applyStateFilters<TB extends keyof DB, O>(
@@ -421,12 +430,7 @@ export function applyStateFilters<TB extends keyof DB, O>(
   }
 
   if (colorLabels && colorLabels.length > 0) {
-    if (viewer.sharedLink) {
-      // no label is ever visible to a shared link, so 'none' matches every asset and any color matches nothing
-      conditions.push(colorLabels.includes('none') ? sql<SqlBool>`true` : sql<SqlBool>`false`);
-    } else {
-      conditions.push(colorLabelsPredicate(viewer.userId, colorLabels));
-    }
+    conditions.push(viewerColorLabelsPredicate(viewer, colorLabels));
   }
 
   return conditions.length > 0 ? qb.where((eb) => eb.and(conditions)) : qb;
@@ -661,13 +665,20 @@ export function searchAssetBuilderLegacy(kysely: Kysely<DB>, options: AssetSearc
         .innerJoin('asset_exif', 'asset.id', 'asset_exif.assetId')
         // the rating as the viewer sees it; without a viewer only the exif rating is known
         .where(
-          options.viewingUserId ? ratingFor(options.viewingUserId) : sql<number | null>`asset_exif.rating`,
+          options.viewingUserId
+            ? viewerRating({ userId: options.viewingUserId, sharedLink: options.sharedLink })
+            : sql<number | null>`asset_exif.rating`,
           options.rating === null ? 'is' : '=',
           options.rating!,
         ),
     )
     .$if(!!options.colorLabels && options.colorLabels.length > 0 && !!options.viewingUserId, (qb) =>
-      qb.where(colorLabelsPredicate(options.viewingUserId!, options.colorLabels!)),
+      qb.where(
+        viewerColorLabelsPredicate(
+          { userId: options.viewingUserId!, sharedLink: options.sharedLink },
+          options.colorLabels!,
+        ),
+      ),
     )
     .$if(!!options.checksum, (qb) => qb.where('asset.checksum', '=', options.checksum!))
     .$if(!!options.id, (qb) => qb.where('asset.id', '=', asUuid(options.id!)))
@@ -941,7 +952,8 @@ function favoritePredicate(eb: AssetExpressionBuilder, eq: boolean, viewerId?: s
 
 // predicates are collected as expressions rather than chained `where` calls so the same
 // helpers can build each `or` branch, which must compose into eb.and/eb.or
-function branchPredicates(eb: AssetExpressionBuilder, branch: SearchFilterBranch, viewerId?: string) {
+function branchPredicates(eb: AssetExpressionBuilder, branch: SearchFilterBranch, viewer?: StateViewer) {
+  const viewerId = viewer?.userId;
   const { encodedVideoPath } = branch;
   return [
     ...comparisonPredicates(eb, 'asset.id', branch.id),
@@ -977,9 +989,10 @@ function branchPredicates(eb: AssetExpressionBuilder, branch: SearchFilterBranch
         ]
       : []),
     // the rating as the viewer sees it; without a viewer only the exif rating is known
-    ...comparisonPredicates(eb, viewerId ? ratingFor(viewerId) : sql<number | null>`asset_exif.rating`, branch.rating),
-    ...(branch.colorLabels && branch.colorLabels.length > 0 && viewerId
-      ? [colorLabelsPredicate(viewerId, branch.colorLabels)]
+    ...comparisonPredicates(eb, viewer ? viewerRating(viewer) : sql<number | null>`asset_exif.rating`, branch.rating),
+    // all service callers pass a viewer; without one colorLabels is ignored
+    ...(branch.colorLabels && branch.colorLabels.length > 0 && viewer
+      ? [viewerColorLabelsPredicate(viewer, branch.colorLabels)]
       : []),
     ...comparisonPredicates(eb, 'asset_exif.fileSizeInByte', branch.fileSizeInBytes),
     ...comparisonPredicates(eb, 'asset.fileCreatedAt', branch.takenAt),
@@ -1031,13 +1044,14 @@ export function searchAssetBuilder(kysely: Kysely<DB>, options: AssetSearchBuild
       )
       .$if(options.withStacked === false, (qb) => qb.where('asset.stackId', 'is', null))
       .where((eb) => {
-        const predicates = branchPredicates(eb, filter, scope.viewingUserId);
+        const viewer = scope.viewingUserId ? { userId: scope.viewingUserId, sharedLink: scope.sharedLink } : undefined;
+        const predicates = branchPredicates(eb, filter, viewer);
         if (branches.length > 0) {
           predicates.push(
             eb.or(
               branches.map((branch) =>
                 eb.and([
-                  ...branchPredicates(eb, branch, scope.viewingUserId),
+                  ...branchPredicates(eb, branch, viewer),
                   ...(scopePerBranch && !isAlbumConfined(branch) ? [ownershipPredicate(eb)] : []),
                 ]),
               ),

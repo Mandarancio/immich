@@ -372,6 +372,7 @@ describe(SearchService.name, () => {
           embedding: '[1, 2, 3]',
           userIds: [authStub.user1.user.id],
           viewingUserId: authStub.user1.user.id,
+          sharedLink: false,
           visibility: 'not-locked',
         },
       );
