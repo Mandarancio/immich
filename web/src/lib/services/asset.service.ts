@@ -9,6 +9,7 @@ import {
   removeAssetFromAlbum,
   runAssetJobs,
   updateAsset,
+  updateAssets,
   type AlbumResponseDto,
   type AssetJobsDto,
   type AssetResponseDto,
@@ -44,12 +45,14 @@ import {
 } from '@mdi/js';
 import type { MessageFormatter } from 'svelte-i18n';
 import { goto } from '$app/navigation';
+import type { ShortcutOptions } from '$lib/actions/shortcut';
 import { ProjectionType } from '$lib/constants';
 import { assetMultiSelectManager } from '$lib/managers/asset-multi-select-manager.svelte';
 import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
+import type { TimelineAsset } from '$lib/managers/timeline-manager/types';
 import AssetAddToAlbumModal from '$lib/modals/AssetAddToAlbumModal.svelte';
 import AssetTagModal from '$lib/modals/AssetTagModal.svelte';
 import ProfileImageCropperModal from '$lib/modals/ProfileImageCropperModal.svelte';
@@ -58,6 +61,7 @@ import { Route } from '$lib/route';
 import { SlideshowState, slideshowStore } from '$lib/stores/slideshow.store';
 import { getAssetMediaUrl, getSharedLink, sleep } from '$lib/utils';
 import { downloadUrl } from '$lib/utils';
+import { colorLabelShortcut } from '$lib/utils/color-label';
 import { handleError } from '$lib/utils/handle-error';
 import { getFormatter } from '$lib/utils/i18n';
 
@@ -232,6 +236,17 @@ export const getAssetActions = (
     shortcuts: [0, 1, 2, 3, 4, 5].map((key) => ({ key: String(key) })),
   };
 
+  const SetColorLabel: ActionItem = {
+    title: $t('set_color_label'),
+    description: $t('set_color_label_description'),
+    $if: () => canRate,
+    onAction: ({ event }) => {
+      const label = event instanceof KeyboardEvent ? colorLabelForKey(event.key) : undefined;
+      return label ? handleSetColorLabel(asset, nextColorLabel([asset], label)) : undefined;
+    },
+    shortcuts: Object.values(colorLabelShortcut).map((key) => ({ key })),
+  };
+
   const AddToAlbum: ActionItem = {
     title: $t('add_to_album'),
     icon: mdiPlus,
@@ -374,6 +389,7 @@ export const getAssetActions = (
     Favorite,
     Unfavorite,
     Rate,
+    SetColorLabel,
     PlayMotionPhoto,
     StopMotionPhoto,
     PlaySlideshow,
@@ -513,6 +529,136 @@ export const handleSetColorLabel = async (asset: AssetResponseDto, colorLabel: A
   } catch (error) {
     handleError(error, $t('errors.cant_apply_changes'));
   }
+};
+
+type UserStateUpdate = { rating: number | null } | { colorLabel: AssetColorLabel | null };
+
+/** Sends a per-user state change for many assets and mirrors it onto the local asset objects. */
+const bulkUpdateUserState = async (
+  assets: TimelineAsset[],
+  update: UserStateUpdate,
+  apply: (asset: TimelineAsset) => void,
+  messages: {
+    success: 'rating_updated_count' | 'color_label_updated_count';
+    error: 'errors.unable_to_set_rating' | 'errors.cant_apply_changes';
+  },
+) => {
+  // per-user state is never written from a shared link view, even by a logged-in owner
+  if (authManager.isSharedLink || assets.length === 0) {
+    return false;
+  }
+
+  const $t = await getFormatter();
+  const ids = assets.map(({ id }) => id);
+
+  try {
+    await updateAssets({ assetBulkUpdateDto: { ids, ...update } });
+    for (const asset of assets) {
+      apply(asset);
+    }
+    toastManager.primary($t(messages.success, { values: { count: ids.length } }));
+    return true;
+  } catch (error) {
+    handleError(error, $t(messages.error));
+    return false;
+  }
+};
+
+/** `null` clears the rating. Resolves to the updated ids, or `undefined` if nothing was changed. */
+export const handleBulkRate = async (
+  assets: TimelineAsset[],
+  rating: number | null,
+  onRated?: (ids: string[], rating: number | null) => void,
+) => {
+  const updated = await bulkUpdateUserState(assets, { rating }, (asset) => (asset.rating = rating), {
+    success: 'rating_updated_count',
+    error: 'errors.unable_to_set_rating',
+  });
+  if (!updated) {
+    return;
+  }
+
+  const ids = assets.map(({ id }) => id);
+  onRated?.(ids, rating);
+  return ids;
+};
+
+/** `null` clears the label. Resolves to the updated ids, or `undefined` if nothing was changed. */
+export const handleBulkSetColorLabel = async (
+  assets: TimelineAsset[],
+  colorLabel: AssetColorLabel | null,
+  onLabeled?: (ids: string[], label: AssetColorLabel | null) => void,
+) => {
+  const updated = await bulkUpdateUserState(assets, { colorLabel }, (asset) => (asset.colorLabel = colorLabel), {
+    success: 'color_label_updated_count',
+    error: 'errors.cant_apply_changes',
+  });
+  if (!updated) {
+    return;
+  }
+
+  const ids = assets.map(({ id }) => id);
+  onLabeled?.(ids, colorLabel);
+  return ids;
+};
+
+/** Toggle semantics: if every target already has the label it is cleared, otherwise it is set. */
+export const nextColorLabel = (assets: Array<{ colorLabel?: AssetColorLabel | null }>, label: AssetColorLabel) =>
+  assets.length > 0 && assets.every((asset) => asset.colorLabel === label) ? null : label;
+
+const colorLabelForKey = (key: string) =>
+  (Object.entries(colorLabelShortcut) as Array<[AssetColorLabel, string]>).find(([, value]) => value === key)?.[0];
+
+type BulkUserStateShortcutOptions = {
+  getAssets: () => TimelineAsset[];
+  onRated?: (ids: string[], rating: number | null) => void;
+  onLabeled?: (ids: string[], label: AssetColorLabel | null) => void;
+  /** called after a successful update, e.g. to clear the selection */
+  onDone?: () => void;
+};
+
+/**
+ * Keyboard shortcuts for the multi-select context: `0`-`5` rate (`0` clears) and `6`-`9` toggle a color label.
+ * Nothing is registered in a shared-link context, and rating keys are skipped when ratings are disabled.
+ */
+export const getBulkUserStateShortcuts = ({
+  getAssets,
+  onRated,
+  onLabeled,
+  onDone,
+}: BulkUserStateShortcutOptions): ShortcutOptions[] => {
+  if (authManager.isSharedLink || !authManager.authenticated) {
+    return [];
+  }
+
+  const options: ShortcutOptions[] = [];
+
+  if (authManager.preferences.ratings.enabled) {
+    for (const key of [0, 1, 2, 3, 4, 5]) {
+      options.push({
+        shortcut: { key: String(key) },
+        onShortcut: async () => {
+          if (await handleBulkRate(getAssets(), key === 0 ? null : key, onRated)) {
+            onDone?.();
+          }
+        },
+      });
+    }
+  }
+
+  for (const [label, key] of Object.entries(colorLabelShortcut) as Array<[AssetColorLabel, string]>) {
+    options.push({
+      shortcut: { key },
+      onShortcut: async () => {
+        const assets = getAssets();
+        if (await handleBulkSetColorLabel(assets, nextColorLabel(assets, label), onLabeled)) {
+          onDone?.();
+        }
+      },
+    });
+  }
+
+  return options;
 };
 
 export const handleTagAssets = async (assetIds: string[], tagIds: string[]) => {
