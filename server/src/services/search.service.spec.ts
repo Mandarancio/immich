@@ -34,11 +34,13 @@ describe(SearchService.name, () => {
         hasNextPage: false,
         items: [getForAsset(asset) as never],
       });
-      mocks.asset.getFavoriteIds.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getUserStates.mockResolvedValue(
+        new Map([[asset.id, { isFavorite: true, rating: null, colorLabel: null }]]),
+      );
 
       const result = await sut.searchMetadata(auth, { size: 250 });
 
-      expect(mocks.asset.getFavoriteIds).toHaveBeenCalledWith(auth.user.id, [asset.id]);
+      expect(mocks.asset.getUserStates).toHaveBeenCalledWith(auth.user.id, [asset.id]);
       expect(result.assets.items[0].isFavorite).toBe(true);
     });
   });

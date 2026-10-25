@@ -19,6 +19,7 @@ import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { LockableProperty, Stack } from 'src/database.js';
 import { Chunked, ChunkedArray, ChunkedSet, DummyValue, GenerateSql } from 'src/decorators.js';
 import {
+  AssetColorLabel,
   AssetFileType,
   AssetOrder,
   AssetOrderBy,
@@ -60,6 +61,9 @@ import {
 import { globToPostgresRegex } from 'src/utils/misc.js';
 
 export type AssetStats = Record<AssetType, number>;
+
+export type UserState = { isFavorite: boolean; rating: number | null; colorLabel: AssetColorLabel | null };
+export type UserStateChange = { isFavorite?: boolean; rating?: number | null; colorLabel?: AssetColorLabel | null };
 
 export interface BoundingBox {
   west: number;
@@ -742,47 +746,50 @@ export class AssetRepository {
   }
 
   @GenerateSql({ params: [DummyValue.UUID, [DummyValue.UUID]] })
-  @ChunkedSet({ paramIndex: 1 })
-  async getFavoriteIds(userId: string, assetIds: string[]): Promise<Set<string>> {
+  @Chunked({
+    paramIndex: 1,
+    mergeFn: (maps: Array<Map<string, UserState>>) => new Map(maps.flatMap((map) => [...map])),
+  })
+  async getUserStates(userId: string, assetIds: string[]): Promise<Map<string, UserState>> {
     if (assetIds.length === 0) {
-      return new Set();
+      return new Map();
     }
 
     const rows = await this.db
-      .selectFrom('asset_favorite')
-      .select('assetId')
+      .selectFrom('asset_user_state')
+      .select(['assetId', 'isFavorite', 'rating', 'colorLabel'])
       .where('userId', '=', userId)
       .where('assetId', '=', anyUuid(assetIds))
       .execute();
-    return new Set(rows.map(({ assetId }) => assetId));
+    return new Map(rows.map(({ assetId, ...state }) => [assetId, state]));
   }
 
-  @GenerateSql({ params: [DummyValue.UUID, [DummyValue.UUID]] })
+  @GenerateSql({
+    params: [DummyValue.UUID, [DummyValue.UUID], { isFavorite: true, rating: 3, colorLabel: AssetColorLabel.Red }],
+  })
   @Chunked({ paramIndex: 1, chunkSize: 4000 })
-  async addFavorites(userId: string, assetIds: string[]): Promise<void> {
-    if (assetIds.length === 0) {
+  async setUserState(userId: string, assetIds: string[], change: UserStateChange): Promise<void> {
+    const values = omitBy(change, isUndefined) as UserStateChange;
+    if (assetIds.length === 0 || Object.keys(values).length === 0) {
       return;
     }
 
-    await this.db
-      .insertInto('asset_favorite')
-      .values(assetIds.map((assetId) => ({ userId, assetId })))
-      .onConflict((oc) => oc.doNothing())
-      .execute();
-  }
-
-  @GenerateSql({ params: [DummyValue.UUID, [DummyValue.UUID]] })
-  @Chunked({ paramIndex: 1 })
-  async removeFavorites(userId: string, assetIds: string[]): Promise<void> {
-    if (assetIds.length === 0) {
-      return;
-    }
-
-    await this.db
-      .deleteFrom('asset_favorite')
-      .where('userId', '=', userId)
-      .where('assetId', '=', anyUuid(assetIds))
-      .execute();
+    await this.db.transaction().execute(async (tx) => {
+      await tx
+        .insertInto('asset_user_state')
+        .values(assetIds.map((assetId) => ({ userId, assetId, ...values })))
+        .onConflict((oc) => oc.columns(['userId', 'assetId']).doUpdateSet({ ...values, updatedAt: sql`now()` }))
+        .execute();
+      // a row without a favorite, rating or color carries no state
+      await tx
+        .deleteFrom('asset_user_state')
+        .where('userId', '=', userId)
+        .where('assetId', '=', anyUuid(assetIds))
+        .where('isFavorite', '=', false)
+        .where('rating', 'is', null)
+        .where('colorLabel', 'is', null)
+        .execute();
+    });
   }
 
   @GenerateSql({

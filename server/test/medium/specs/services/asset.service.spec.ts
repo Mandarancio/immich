@@ -61,8 +61,8 @@ const readState = async (ctx: ReturnType<typeof setup>['ctx'], assetId: string, 
     .select(['isFavorite', 'updatedAt'])
     .where('id', '=', assetId)
     .executeTakeFirstOrThrow();
-  const mirrored = await ctx.get(AssetRepository).getFavoriteIds(userId, [assetId]);
-  return { ...row, mirrored: mirrored.has(assetId) };
+  const states = await ctx.get(AssetRepository).getUserStates(userId, [assetId]);
+  return { ...row, mirrored: states.get(assetId)?.isFavorite === true };
 };
 
 beforeAll(async () => {
@@ -91,7 +91,7 @@ describe(AssetService.name, () => {
       const { asset } = await ctx.newAsset({ ownerId: owner.id });
       const { album } = await ctx.newAlbum({ ownerId: owner.id }, [asset.id]);
       await ctx.newAlbumUser({ albumId: album.id, userId: member.id, role: AlbumUserRole.Viewer });
-      await ctx.get(AssetRepository).addFavorites(member.id, [asset.id]);
+      await ctx.get(AssetRepository).setUserState(member.id, [asset.id], { isFavorite: true });
 
       const memberStats = await sut.getStatistics(factory.auth({ user: member }), { isFavorite: true });
       const ownerStats = await sut.getStatistics(factory.auth({ user: owner }), { isFavorite: true });
@@ -116,8 +116,8 @@ describe(AssetService.name, () => {
 
       await sut.updateAll(factory.auth({ user: member }), { ids: [asset.id], isFavorite: true });
 
-      await expect(ctx.get(AssetRepository).getFavoriteIds(member.id, [asset.id])).resolves.toEqual(
-        new Set([asset.id]),
+      await expect(ctx.get(AssetRepository).getUserStates(member.id, [asset.id])).resolves.toEqual(
+        new Map([[asset.id, { isFavorite: true, rating: null, colorLabel: null }]]),
       );
       const row = await ctx.database
         .selectFrom('asset')
@@ -137,7 +137,7 @@ describe(AssetService.name, () => {
       // the owner is also a member of an album containing the stale asset
       const { album } = await ctx.newAlbum({ ownerId: other.id }, [stale.id]);
       await ctx.newAlbumUser({ albumId: album.id, userId: user.id, role: AlbumUserRole.Viewer });
-      await ctx.get(AssetRepository).addFavorites(user.id, [stale.id]);
+      await ctx.get(AssetRepository).setUserState(user.id, [stale.id], { isFavorite: true });
 
       const auth = factory.auth({ user });
       await expect(sut.getStatistics(auth, { isFavorite: true })).resolves.toMatchObject({ images: 1 });
@@ -163,7 +163,7 @@ describe(AssetService.name, () => {
         const { sut, ctx } = setupOwned();
         const { user } = await ctx.newUser();
         const { asset } = await ctx.newAsset({ ownerId: user.id, isFavorite: true });
-        await ctx.get(AssetRepository).addFavorites(user.id, [asset.id]);
+        await ctx.get(AssetRepository).setUserState(user.id, [asset.id], { isFavorite: true });
         const before = await readState(ctx, asset.id, user.id);
 
         await sut.updateAll(factory.auth({ user }), { ids: [asset.id], isFavorite: false });

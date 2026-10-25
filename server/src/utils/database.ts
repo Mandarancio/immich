@@ -305,7 +305,7 @@ export function inSharedAlbum(userId: string, assetId: 'asset.id' | 'asset_face.
 }
 
 // the viewer's favorite state: the owner's own column is authoritative for owned assets, a per-user row for the rest;
-// owner rows in asset_favorite are only a mirror and are never read, as other code paths write the column directly
+// owner rows in asset_user_state are only a mirror and are never read, as other code paths write the column directly
 export function isFavoriteFor(userId: string) {
   const eb = expressionBuilder<DB, 'asset'>();
   return eb.or([
@@ -314,10 +314,11 @@ export function isFavoriteFor(userId: string) {
       eb('asset.ownerId', '!=', userId),
       eb.exists(
         eb
-          .selectFrom('asset_favorite')
+          .selectFrom('asset_user_state')
           .select(sql.lit(1).as('exists'))
-          .whereRef('asset_favorite.assetId', '=', 'asset.id')
-          .where('asset_favorite.userId', '=', userId),
+          .whereRef('asset_user_state.assetId', '=', 'asset.id')
+          .where('asset_user_state.userId', '=', userId)
+          .where('asset_user_state.isFavorite', '=', true),
       ),
     ]),
   ]);
@@ -356,10 +357,11 @@ export function isSharedFavoriteFor(userId: string) {
     eb('asset.ownerId', '!=', userId),
     eb.exists(
       eb
-        .selectFrom('asset_favorite')
+        .selectFrom('asset_user_state')
         .select(sql.lit(1).as('exists'))
-        .whereRef('asset_favorite.assetId', '=', 'asset.id')
-        .where('asset_favorite.userId', '=', userId),
+        .whereRef('asset_user_state.assetId', '=', 'asset.id')
+        .where('asset_user_state.userId', '=', userId)
+        .where('asset_user_state.isFavorite', '=', true),
     ),
     isSharedWith(userId),
   ]);

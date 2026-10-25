@@ -239,7 +239,7 @@ export const isPanorama = (asset: { projectionType: string | null; originalFileN
 
 // favorites the viewer set on assets they do not own; owned assets use the asset column, never the mirror rows
 export const getViewerFavoriteIds = async (
-  repository: Pick<AssetRepository, 'getFavoriteIds'>,
+  repository: Pick<AssetRepository, 'getUserStates'>,
   auth: AuthDto,
   assets: Array<{ id: string; ownerId: string }>,
 ): Promise<ReadonlySet<string>> => {
@@ -248,5 +248,10 @@ export const getViewerFavoriteIds = async (
   }
 
   const ids = assets.filter(({ ownerId }) => ownerId !== auth.user.id).map(({ id }) => id);
-  return ids.length > 0 ? repository.getFavoriteIds(auth.user.id, ids) : new Set();
+  if (ids.length === 0) {
+    return new Set();
+  }
+
+  const states = await repository.getUserStates(auth.user.id, ids);
+  return new Set([...states].filter(([, { isFavorite }]) => isFavorite).map(([id]) => id));
 };

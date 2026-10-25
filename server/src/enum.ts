@@ -1224,6 +1224,19 @@ export const AssetVisibilitySchema = z
   .describe('Asset visibility')
   .meta({ id: 'AssetVisibility' });
 
+export enum AssetColorLabel {
+  Red = 'red',
+  Yellow = 'yellow',
+  Green = 'green',
+  Blue = 'blue',
+  Purple = 'purple',
+}
+
+export const AssetColorLabelSchema = z
+  .enum(AssetColorLabel)
+  .describe('Asset color label')
+  .meta({ id: 'AssetColorLabel' });
+
 export enum ReleaseChannel {
   Stable = 'stable',
   ReleaseCandidate = 'releaseCandidate',
