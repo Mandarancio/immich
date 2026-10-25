@@ -879,7 +879,11 @@ export class AssetRepository {
             'asset.duration',
             'asset.id',
             'asset.visibility',
-            isFavoriteFor(auth.user.id).as('isFavorite'),
+            // shared links act as the link creator, whose personal favorites must not leak
+            (auth.sharedLink
+              ? eb.and([eb('asset.ownerId', '=', auth.user.id), eb('asset.isFavorite', '=', true)])
+              : isFavoriteFor(auth.user.id)
+            ).as('isFavorite'),
             sql`asset.type = 'IMAGE'`.as('isImage'),
             sql`asset."deletedAt" is not null`.as('isTrashed'),
             'asset.livePhotoVideoId',
