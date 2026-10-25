@@ -94,6 +94,7 @@ describe('getAltText', () => {
         isFavorite: false,
         rating: null,
         colorLabel: null,
+        flag: null,
         isTrashed: false,
         isVideo,
         isImage: !isVideo,

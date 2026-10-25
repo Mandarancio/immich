@@ -192,6 +192,7 @@ export class TimelineMonth {
         isFavorite: bucketAssets.isFavorite[i],
         rating: bucketAssets.rating[i] ?? null,
         colorLabel: bucketAssets.colorLabel[i] ?? null,
+        flag: bucketAssets.flag[i] ?? null,
         isImage: bucketAssets.isImage[i],
         isTrashed: bucketAssets.isTrashed[i],
         isVideo: !bucketAssets.isImage[i],

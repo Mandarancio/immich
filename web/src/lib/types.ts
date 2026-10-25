@@ -1,4 +1,4 @@
-import type { AssetColorLabel, QueueResponseDto } from '@immich/sdk';
+import type { AssetColorLabel, AssetFlag, QueueResponseDto } from '@immich/sdk';
 import type { ActionItem } from '@immich/ui';
 import type { DateTime } from 'luxon';
 import type { SvelteSet } from 'svelte/reactivity';
@@ -76,6 +76,7 @@ export type SearchFilter = {
   mediaType: MediaType;
   rating?: number | null;
   colorLabels: Array<AssetColorLabel | 'none'>;
+  flags: Array<AssetFlag | 'none'>;
 };
 
 export type PeopleFilter = {

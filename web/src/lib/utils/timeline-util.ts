@@ -159,6 +159,7 @@ export const toTimelineAsset = (unknownAsset: AssetResponseDto | TimelineAsset):
     isFavorite: assetResponse.isFavorite,
     rating: assetResponse.exifInfo?.rating ?? null,
     colorLabel: assetResponse.colorLabel ?? null,
+    flag: assetResponse.flag ?? null,
     visibility: assetResponse.visibility,
     isTrashed: assetResponse.isTrashed,
     isVideo: assetResponse.type === AssetTypeEnum.Video,

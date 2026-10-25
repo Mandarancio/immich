@@ -1,4 +1,4 @@
-import type { AssetColorLabel, AssetStackResponseDto, AssetVisibility } from '@immich/sdk';
+import type { AssetColorLabel, AssetFlag, AssetStackResponseDto, AssetVisibility } from '@immich/sdk';
 import type { TimelineFilter } from '$lib/managers/timeline-filter-manager.svelte';
 import type { TimelineDate, TimelineDateTime, TimelineYearMonth } from '$lib/utils/timeline-util';
 
@@ -30,6 +30,7 @@ export type TimelineAsset = {
   isFavorite: boolean;
   rating: number | null;
   colorLabel: AssetColorLabel | null;
+  flag: AssetFlag | null;
   isTrashed: boolean;
   isVideo: boolean;
   isImage: boolean;

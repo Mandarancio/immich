@@ -43,6 +43,7 @@ export const timelineAssetFactory = Sync.makeFactory<TimelineAsset>({
   isFavorite: Sync.each(() => faker.datatype.boolean()),
   rating: null,
   colorLabel: null,
+  flag: null,
   visibility: AssetVisibility.Timeline,
   isTrashed: false,
   isImage: true,
@@ -66,6 +67,7 @@ export const toResponseDto = (...timelineAsset: TimelineAsset[]) => {
     isFavorite: [],
     rating: [],
     colorLabel: [],
+    flag: [],
     isImage: [],
     isTrashed: [],
     livePhotoVideoId: [],
@@ -88,6 +90,7 @@ export const toResponseDto = (...timelineAsset: TimelineAsset[]) => {
     bucketAssets.isFavorite.push(asset.isFavorite);
     bucketAssets.rating.push(asset.rating);
     bucketAssets.colorLabel.push(asset.colorLabel);
+    bucketAssets.flag.push(asset.flag);
     bucketAssets.isImage.push(asset.isImage);
     bucketAssets.isTrashed.push(asset.isTrashed);
     bucketAssets.livePhotoVideoId.push(asset.livePhotoVideoId!);

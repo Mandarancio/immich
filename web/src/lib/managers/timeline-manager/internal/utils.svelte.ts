@@ -28,11 +28,11 @@ export function updateObject(target: any, source: any): boolean {
   return updated;
 }
 /**
- * Strip the per-user fields (rating, colorLabel) from a payload that carries no viewer state, so that
+ * Strip the per-user fields (rating, colorLabel, flag) from a payload that carries no viewer state, so that
  * applying it to an existing asset never overwrites the viewer's values.
  */
 export function withoutUserState(asset: TimelineAsset): TimelineAsset {
-  return omit(asset, ['rating', 'colorLabel']) as TimelineAsset;
+  return omit(asset, ['rating', 'colorLabel', 'flag']) as TimelineAsset;
 }
 
 /** Drop unset values, the favorite toggle when the page overrides it, and empty filters. */
@@ -56,6 +56,9 @@ export function normalizeFilter(
   if (filter.colorLabels && filter.colorLabels.length > 0) {
     normalized.colorLabels = filter.colorLabels;
   }
+  if (filter.flags && filter.flags.length > 0) {
+    normalized.flags = filter.flags;
+  }
   return Object.keys(normalized).length > 0 ? normalized : undefined;
 }
 
@@ -78,9 +81,10 @@ export function matchesFilter(filter: TimelineFilter | undefined, asset: Timelin
       return false;
     }
   }
-  return (
-    !filter.colorLabels || filter.colorLabels.length === 0 || filter.colorLabels.includes(asset.colorLabel ?? 'none')
-  );
+  const matchesColorLabel =
+    !filter.colorLabels || filter.colorLabels.length === 0 || filter.colorLabels.includes(asset.colorLabel ?? 'none');
+  const matchesFlag = !filter.flags || filter.flags.length === 0 || filter.flags.includes(asset.flag ?? 'none');
+  return matchesColorLabel && matchesFlag;
 }
 
 /** Build the bucket request params: page options win over the filter's favorite toggle. */
@@ -92,5 +96,6 @@ export function toBucketRequestParams(options: TimelineManagerOptions) {
     rating: filter?.rating,
     unrated: filter?.unrated,
     colorLabels: filter?.colorLabels,
+    flags: filter?.flags,
   };
 }
