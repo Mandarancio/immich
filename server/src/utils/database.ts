@@ -435,6 +435,54 @@ export function viewerFlagsPredicate(viewer: StateViewer, flags: Array<AssetFlag
   return flagsPredicate(viewer.userId, flags);
 }
 
+// liked (thumbs-up) by any user in an album the viewer is a member of; owners have an album_user row too
+export function likedInAccessibleAlbum(userId: string) {
+  const eb = expressionBuilder<DB, 'asset'>();
+  return eb.exists(
+    eb
+      .selectFrom('activity')
+      .select(sql.lit(1).as('exists'))
+      .innerJoin('album', (join) => join.onRef('album.id', '=', 'activity.albumId').on('album.deletedAt', 'is', null))
+      .innerJoin('album_user', (join) =>
+        join.onRef('album_user.albumId', '=', 'album.id').on('album_user.userId', '=', userId),
+      )
+      .whereRef('activity.assetId', '=', 'asset.id')
+      .where('activity.isLiked', '=', true),
+  );
+}
+
+// liked (thumbs-up) by the user themselves
+export function likedBy(userId: string) {
+  const eb = expressionBuilder<DB, 'asset'>();
+  return eb.exists(
+    eb
+      .selectFrom('activity')
+      .select(sql.lit(1).as('exists'))
+      .whereRef('activity.assetId', '=', 'asset.id')
+      .where('activity.userId', '=', userId)
+      .where('activity.isLiked', '=', true),
+  );
+}
+
+// likes are personal to a user, so a shared link never sees any: liked matches nothing, not liked matches everything
+export function viewerLikedPredicate(viewer: StateViewer, eq: boolean): Expression<SqlBool> {
+  if (viewer.sharedLink) {
+    return sql<SqlBool>`${sql.lit(!eq)}`;
+  }
+  const eb = expressionBuilder<DB, 'asset'>();
+  const liked = likedInAccessibleAlbum(viewer.userId);
+  return eq ? liked : eb.not(liked);
+}
+
+export function viewerLikedByMePredicate(viewer: StateViewer, eq: boolean): Expression<SqlBool> {
+  if (viewer.sharedLink) {
+    return sql<SqlBool>`${sql.lit(!eq)}`;
+  }
+  const eb = expressionBuilder<DB, 'asset'>();
+  const liked = likedBy(viewer.userId);
+  return eq ? liked : eb.not(liked);
+}
+
 // favorite, rating, color label and flag filters, evaluated from the viewer's point of view;
 // `rating` (at least n stars) and `unrated` are combined as an OR
 export function applyStateFilters<TB extends keyof DB, O>(
@@ -714,6 +762,19 @@ export function searchAssetBuilderLegacy(kysely: Kysely<DB>, options: AssetSearc
     .$if(!!options.flags && options.flags.length > 0 && !!options.viewingUserId, (qb) =>
       qb.where(
         viewerFlagsPredicate({ userId: options.viewingUserId!, sharedLink: options.sharedLink }, options.flags!),
+      ),
+    )
+    .$if(options.isLiked !== undefined && !!options.viewingUserId, (qb) =>
+      qb.where(
+        viewerLikedPredicate({ userId: options.viewingUserId!, sharedLink: options.sharedLink }, options.isLiked!),
+      ),
+    )
+    .$if(options.isLikedByMe !== undefined && !!options.viewingUserId, (qb) =>
+      qb.where(
+        viewerLikedByMePredicate(
+          { userId: options.viewingUserId!, sharedLink: options.sharedLink },
+          options.isLikedByMe!,
+        ),
       ),
     )
     .$if(!!options.checksum, (qb) => qb.where('asset.checksum', '=', options.checksum!))
@@ -1031,6 +1092,8 @@ function branchPredicates(eb: AssetExpressionBuilder, branch: SearchFilterBranch
       ? [viewerColorLabelsPredicate(viewer, branch.colorLabels)]
       : []),
     ...(branch.flags && branch.flags.length > 0 && viewer ? [viewerFlagsPredicate(viewer, branch.flags)] : []),
+    ...(branch.isLiked && viewer ? [viewerLikedPredicate(viewer, branch.isLiked.eq)] : []),
+    ...(branch.isLikedByMe && viewer ? [viewerLikedByMePredicate(viewer, branch.isLikedByMe.eq)] : []),
     ...comparisonPredicates(eb, 'asset_exif.fileSizeInByte', branch.fileSizeInBytes),
     ...comparisonPredicates(eb, 'asset.fileCreatedAt', branch.takenAt),
     ...comparisonPredicates(eb, 'asset.createdAt', branch.createdAt),

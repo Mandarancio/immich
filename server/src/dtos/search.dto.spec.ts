@@ -73,3 +73,32 @@ describe('search flags', () => {
     expect(SmartSearchDto.schema.safeParse({ query: 'x', flags: ['pick'] }).success).toBe(true);
   });
 });
+
+describe.each(['isLiked', 'isLikedByMe'] as const)('search %s', (field) => {
+  it('should accept a boolean in the flat dto', () => {
+    expect(MetadataSearchDto.schema.safeParse({ [field]: true }).data?.[field]).toBe(true);
+    expect(MetadataSearchDto.schema.safeParse({ [field]: false }).data?.[field]).toBe(false);
+  });
+
+  it('should reject a non-boolean in the flat dto', () => {
+    expect(MetadataSearchDto.schema.safeParse({ [field]: 'yes' }).success).toBe(false);
+  });
+
+  it('should accept an eq filter in the filter and its or branches', () => {
+    expect(MetadataSearchDto.schema.safeParse({ filter: { [field]: { eq: true } } }).success).toBe(true);
+    expect(MetadataSearchDto.schema.safeParse({ filter: { or: [{ [field]: { eq: false } }] } }).success).toBe(true);
+  });
+
+  it('should reject a malformed filter', () => {
+    expect(MetadataSearchDto.schema.safeParse({ filter: { [field]: true } }).success).toBe(false);
+    expect(MetadataSearchDto.schema.safeParse({ filter: { [field]: {} } }).success).toBe(false);
+  });
+
+  it('should not combine the flat field with the filter', () => {
+    expect(MetadataSearchDto.schema.safeParse({ [field]: true, filter: { city: { eq: 'Oslo' } } }).success).toBe(false);
+  });
+
+  it('should be accepted by smart search', () => {
+    expect(SmartSearchDto.schema.safeParse({ query: 'x', [field]: true }).success).toBe(true);
+  });
+});

@@ -11801,6 +11801,36 @@
             }
           },
           {
+            "name": "isLiked",
+            "required": false,
+            "in": "query",
+            "description": "Filter by liked status: liked by any user in an album the viewer can access",
+            "x-immich-history": [
+              {
+                "version": "v3.2.0",
+                "state": "Added"
+              }
+            ],
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "isLikedByMe",
+            "required": false,
+            "in": "query",
+            "description": "Filter by assets liked by the viewer",
+            "x-immich-history": [
+              {
+                "version": "v3.2.0",
+                "state": "Added"
+              }
+            ],
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
             "name": "isMotion",
             "required": false,
             "in": "query",
@@ -24133,6 +24163,26 @@
             ],
             "x-immich-state": "Deprecated"
           },
+          "isLiked": {
+            "description": "Filter by liked status: liked by any user in an album the viewer can access",
+            "type": "boolean",
+            "x-immich-history": [
+              {
+                "version": "v3.2.0",
+                "state": "Added"
+              }
+            ]
+          },
+          "isLikedByMe": {
+            "description": "Filter by assets liked by the viewer",
+            "type": "boolean",
+            "x-immich-history": [
+              {
+                "version": "v3.2.0",
+                "state": "Added"
+              }
+            ]
+          },
           "isMotion": {
             "deprecated": true,
             "description": "Filter by motion photo status",
@@ -26874,6 +26924,26 @@
             ],
             "x-immich-state": "Deprecated"
           },
+          "isLiked": {
+            "description": "Filter by liked status: liked by any user in an album the viewer can access",
+            "type": "boolean",
+            "x-immich-history": [
+              {
+                "version": "v3.2.0",
+                "state": "Added"
+              }
+            ]
+          },
+          "isLikedByMe": {
+            "description": "Filter by assets liked by the viewer",
+            "type": "boolean",
+            "x-immich-history": [
+              {
+                "version": "v3.2.0",
+                "state": "Added"
+              }
+            ]
+          },
           "isMotion": {
             "deprecated": true,
             "description": "Filter by motion photo status",
@@ -27768,6 +27838,12 @@
           "isFavorite": {
             "$ref": "#/components/schemas/BoolFilter"
           },
+          "isLiked": {
+            "$ref": "#/components/schemas/BoolFilter"
+          },
+          "isLikedByMe": {
+            "$ref": "#/components/schemas/BoolFilter"
+          },
           "isMotion": {
             "$ref": "#/components/schemas/BoolFilter"
           },
@@ -27909,6 +27985,12 @@
             "$ref": "#/components/schemas/BoolFilter"
           },
           "isFavorite": {
+            "$ref": "#/components/schemas/BoolFilter"
+          },
+          "isLiked": {
+            "$ref": "#/components/schemas/BoolFilter"
+          },
+          "isLikedByMe": {
             "$ref": "#/components/schemas/BoolFilter"
           },
           "isMotion": {
@@ -29190,6 +29272,26 @@
             ],
             "x-immich-state": "Deprecated"
           },
+          "isLiked": {
+            "description": "Filter by liked status: liked by any user in an album the viewer can access",
+            "type": "boolean",
+            "x-immich-history": [
+              {
+                "version": "v3.2.0",
+                "state": "Added"
+              }
+            ]
+          },
+          "isLikedByMe": {
+            "description": "Filter by assets liked by the viewer",
+            "type": "boolean",
+            "x-immich-history": [
+              {
+                "version": "v3.2.0",
+                "state": "Added"
+              }
+            ]
+          },
           "isMotion": {
             "deprecated": true,
             "description": "Filter by motion photo status",
@@ -30003,6 +30105,26 @@
               }
             ],
             "x-immich-state": "Deprecated"
+          },
+          "isLiked": {
+            "description": "Filter by liked status: liked by any user in an album the viewer can access",
+            "type": "boolean",
+            "x-immich-history": [
+              {
+                "version": "v3.2.0",
+                "state": "Added"
+              }
+            ]
+          },
+          "isLikedByMe": {
+            "description": "Filter by assets liked by the viewer",
+            "type": "boolean",
+            "x-immich-history": [
+              {
+                "version": "v3.2.0",
+                "state": "Added"
+              }
+            ]
           },
           "isMotion": {
             "deprecated": true,

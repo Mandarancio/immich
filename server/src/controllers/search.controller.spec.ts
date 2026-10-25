@@ -156,6 +156,42 @@ describe(SearchController.name, () => {
       expect(status).toBe(200);
     });
 
+    it.each(['isLiked', 'isLikedByMe'])(
+      'should reject the flat %s field combined with a new structure field',
+      async (field) => {
+        const { status, body } = await request(ctx.getHttpServer())
+          .post('/search/metadata')
+          .send({ filter: {}, [field]: true });
+        expect(status).toBe(400);
+        expect(body).toEqual(
+          errorDto.validationError([
+            { path: [field], message: `Deprecated field ${field} cannot be combined with filter` },
+          ]),
+        );
+      },
+    );
+
+    it.each(['isLiked', 'isLikedByMe'])('should accept the flat %s field', async (field) => {
+      const { status } = await request(ctx.getHttpServer())
+        .post('/search/metadata')
+        .send({ [field]: false });
+      expect(status).toBe(200);
+    });
+
+    it.each(['isLiked', 'isLikedByMe'])('should reject a non-boolean %s', async (field) => {
+      const { status } = await request(ctx.getHttpServer())
+        .post('/search/metadata')
+        .send({ [field]: 'yes' });
+      expect(status).toBe(400);
+    });
+
+    it.each(['isLiked', 'isLikedByMe'])('should accept %s in the filter', async (field) => {
+      const { status } = await request(ctx.getHttpServer())
+        .post('/search/metadata')
+        .send({ filter: { [field]: { eq: true } } });
+      expect(status).toBe(200);
+    });
+
     it('should reject an unknown flag', async () => {
       const { status } = await request(ctx.getHttpServer())
         .post('/search/metadata')

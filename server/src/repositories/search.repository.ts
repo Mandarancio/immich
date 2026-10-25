@@ -92,6 +92,10 @@ export interface SearchExifOptions {
   rating?: number | null;
   colorLabels?: Array<AssetColorLabel | 'none'>;
   flags?: Array<AssetFlag | 'none'>;
+  /** liked by any user in an album the viewer can access, requires `viewingUserId` */
+  isLiked?: boolean;
+  /** liked by the viewer, requires `viewingUserId` */
+  isLikedByMe?: boolean;
 }
 
 export interface SearchEmbeddingOptions {

@@ -1943,6 +1943,8 @@
   "search_filter_display_option_not_in_album": "Not in album",
   "search_filter_display_options": "Display Options",
   "search_filter_filename": "Search by file name",
+  "search_filter_liked": "Liked",
+  "search_filter_liked_by_me": "Liked by me",
   "search_filter_location": "Location",
   "search_filter_location_description": "Search for photos taken in a specific city, country, or location.",
   "search_filter_location_title": "Select location",

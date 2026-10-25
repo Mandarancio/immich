@@ -88,6 +88,8 @@ class SearchManager {
         isArchive: searchQuery.visibility === AssetVisibility.Archive,
         isFavorite: searchQuery.isFavorite ?? false,
         isNotInAlbum: 'isNotInAlbum' in searchQuery ? (searchQuery.isNotInAlbum ?? false) : false,
+        isLiked: searchQuery.isLiked ?? false,
+        isLikedByMe: searchQuery.isLikedByMe ?? false,
       },
       mediaType:
         searchQuery.type === AssetTypeEnum.Image
@@ -133,6 +135,8 @@ class SearchManager {
       visibility: this.filter.display.isArchive ? AssetVisibility.Archive : undefined,
       isFavorite: this.filter.display.isFavorite || undefined,
       isNotInAlbum: this.filter.display.isNotInAlbum || undefined,
+      isLiked: this.filter.display.isLiked || undefined,
+      isLikedByMe: this.filter.display.isLikedByMe || undefined,
       personIds: this.filter.personIds.size > 0 ? [...this.filter.personIds] : undefined,
       tagIds: this.filter.tagIds === null ? null : this.filter.tagIds.size > 0 ? [...this.filter.tagIds] : undefined,
       albumIds: this.filter.albumIds.size > 0 ? [...this.filter.albumIds] : undefined,
