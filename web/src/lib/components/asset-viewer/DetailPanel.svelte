@@ -1,5 +1,6 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
+  import ColorLabelPicker from '$lib/components/asset-viewer/ColorLabelPicker.svelte';
   import DetailPanelDate from '$lib/components/asset-viewer/DetailPanelDate.svelte';
   import DetailPanelDescription from '$lib/components/asset-viewer/DetailPanelDescription.svelte';
   import DetailPanelLocation from '$lib/components/asset-viewer/DetailPanelLocation.svelte';
@@ -9,8 +10,9 @@
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { Route } from '$lib/route';
+  import { handleSetColorLabel } from '$lib/services/asset.service';
   import { locale } from '$lib/stores/preferences.store';
-  import { getAssetMediaUrl } from '$lib/utils';
+  import { getAssetMediaUrl, handlePromiseError } from '$lib/utils';
   import { delay, getDimensions } from '$lib/utils/asset-utils';
   import { getByteUnitString } from '$lib/utils/byte-units';
   import { getParentPath } from '$lib/utils/tree-utils';
@@ -139,6 +141,14 @@
 
     <DetailPanelDescription {asset} {isOwner} />
     <DetailPanelRating {asset} {isOwner} />
+    {#if !authManager.isSharedLink && authManager.authenticated}
+      <section class="px-4 pt-4">
+        <ColorLabelPicker
+          value={asset.colorLabel ?? null}
+          onChange={(label) => handlePromiseError(handleSetColorLabel(asset, label))}
+        />
+      </section>
+    {/if}
     <DetailPanelPeople {asset} {isOwner} {previousRoute} />
 
     <div class="p-4">

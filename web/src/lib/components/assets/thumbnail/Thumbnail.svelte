@@ -7,7 +7,9 @@
   import { getAssetMediaUrl, getAssetPlaybackUrl } from '$lib/utils';
   import { moveFocus } from '$lib/utils/focus-util';
   import { currentUrlReplaceAssetId } from '$lib/utils/navigation';
+  import { colorLabelClass } from '$lib/utils/color-label';
   import { getAltText } from '$lib/utils/thumbnail-util';
+  import { t } from 'svelte-i18n';
   import { AssetMediaSize, AssetVisibility, type UserResponseDto } from '@immich/sdk';
   import { Icon } from '@immich/ui';
   import {
@@ -20,6 +22,7 @@
     mdiMotionPauseOutline,
     mdiMotionPlayOutline,
     mdiRotate360,
+    mdiStar,
   } from '@mdi/js';
   import { onMount } from 'svelte';
   import type { ClassValue } from 'svelte/elements';
@@ -81,6 +84,13 @@
   let width = $derived(thumbnailSize || thumbnailWidth || 235);
   let height = $derived(thumbnailSize || thumbnailHeight || 235);
 
+  // rating -1 (rejected) is not shown as a star badge
+  let showRatingBadge = $derived(
+    !authManager.isSharedLink &&
+      authManager.authenticated &&
+      authManager.preferences.ratings.enabled &&
+      (asset.rating ?? 0) > 0,
+  );
   let assetOwner = $derived(albumUsers?.find((user) => user.id === asset.ownerId) ?? null);
 
   const onIconClickedHandler = (e?: MouseEvent) => {
@@ -321,6 +331,36 @@
         {#if !authManager.isSharedLink && asset.isFavorite}
           <div class="absolute inset-s-2 bottom-2 z-2">
             <Icon data-icon-favorite icon={mdiHeart} size="24" class="text-white" />
+          </div>
+        {/if}
+
+        <!-- Per-user color label dot and rating badge, next to the favorite heart -->
+        {#if asset.colorLabel || showRatingBadge}
+          <div
+            class={[
+              'absolute bottom-2 z-2 flex h-6 items-center gap-1',
+              !authManager.isSharedLink && asset.isFavorite ? 'inset-s-9' : 'inset-s-2',
+            ]}
+          >
+            {#if asset.colorLabel}
+              <span
+                data-testid="thumbnail-color-label"
+                role="img"
+                aria-label={$t(`color_label_${asset.colorLabel}`)}
+                class={['size-3 rounded-full ring-1 ring-white/80', colorLabelClass[asset.colorLabel]]}
+              ></span>
+            {/if}
+            {#if showRatingBadge}
+              <span
+                data-testid="thumbnail-rating"
+                role="img"
+                aria-label={$t('rating_count', { values: { count: asset.rating } })}
+                class="text-white-shadow flex items-center text-xs font-medium text-white"
+              >
+                <Icon icon={mdiStar} size="14" aria-hidden />
+                {asset.rating}
+              </span>
+            {/if}
           </div>
         {/if}
 
