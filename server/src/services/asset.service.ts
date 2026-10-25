@@ -84,6 +84,13 @@ export class AssetService extends BaseService {
   }
 
   async update(auth: AuthDto, id: string, dto: UpdateAssetDto): Promise<AssetResponseDto> {
+    if (this.isFavoriteOnly(auth, dto, dto.isFavorite)) {
+      const ownedIds = await this.applySharedFavorites(auth, [id], dto.isFavorite!);
+      if (ownedIds.length === 0) {
+        return this.get(auth, id) as Promise<AssetResponseDto>;
+      }
+    }
+
     await this.requireAccess({ auth, permission: Permission.AssetUpdate, ids: [id] });
 
     const { description, dateTimeOriginal, latitude, longitude, rating, ...rest } = dto;
@@ -124,7 +131,7 @@ export class AssetService extends BaseService {
 
   async updateAll(auth: AuthDto, dto: AssetBulkUpdateDto): Promise<void> {
     const {
-      ids,
+      ids: requestedIds,
       isFavorite,
       visibility,
       dateTimeOriginal,
@@ -136,6 +143,14 @@ export class AssetService extends BaseService {
       dateTimeRelative,
       timeZone,
     } = dto;
+    let ids = requestedIds;
+    if (this.isFavoriteOnly(auth, dto, isFavorite)) {
+      ids = await this.applySharedFavorites(auth, requestedIds, isFavorite!);
+      if (ids.length === 0) {
+        return;
+      }
+    }
+
     await this.requireAccess({ auth, permission: Permission.AssetUpdate, ids });
 
     const assetDto = omitBy({ isFavorite, visibility, duplicateId }, isUndefined);
@@ -615,5 +630,29 @@ export class AssetService extends BaseService {
 
     await this.assetEditRepository.replaceAll(id, []);
     await this.jobRepository.queue({ name: JobName.AssetEditThumbnailGeneration, data: { id } });
+  }
+
+  // a favorite-only update is allowed on any asset the user can read; non-owned ones go to asset_favorite
+  private isFavoriteOnly(auth: AuthDto, dto: object, isFavorite?: boolean) {
+    if (auth.sharedLink || isFavorite === undefined) {
+      return false;
+    }
+    return Object.entries(dto).every(([key, value]) => key === 'ids' || key === 'isFavorite' || value === undefined);
+  }
+
+  // writes shared favorites for the non-owned ids and returns the owned ids
+  private async applySharedFavorites(auth: AuthDto, ids: string[], isFavorite: boolean): Promise<string[]> {
+    const owned = await this.checkAccess({ auth, permission: Permission.AssetUpdate, ids });
+    const others = ids.filter((id) => !owned.has(id));
+    if (others.length === 0) {
+      return ids;
+    }
+
+    await this.requireAccess({ auth, permission: Permission.AssetRead, ids: others });
+    await (isFavorite
+      ? this.assetRepository.addFavorites(auth.user.id, others)
+      : this.assetRepository.removeFavorites(auth.user.id, others));
+
+    return ids.filter((id) => owned.has(id));
   }
 }
