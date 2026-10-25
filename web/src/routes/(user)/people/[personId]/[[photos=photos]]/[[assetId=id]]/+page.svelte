@@ -18,6 +18,7 @@
   import DownloadAction from '$lib/components/timeline/actions/DownloadAction.svelte';
   import FavoriteAction from '$lib/components/timeline/actions/FavoriteAction.svelte';
   import SetColorLabelAction from '$lib/components/timeline/actions/SetColorLabelAction.svelte';
+  import CompareAction from '$lib/components/timeline/actions/CompareAction.svelte';
   import SetFlagAction from '$lib/components/timeline/actions/SetFlagAction.svelte';
   import SetRatingAction from '$lib/components/timeline/actions/SetRatingAction.svelte';
   import SelectAllAssets from '$lib/components/timeline/actions/SelectAllAction.svelte';
@@ -494,6 +495,9 @@
         onLabeled={(ids, label) => timelineManager.update(ids, (asset) => (asset.colorLabel = label))}
       />
       <SetFlagAction onFlagged={(ids, flag) => timelineManager.update(ids, (asset) => (asset.flag = flag))} />
+      <CompareAction
+        onUpdated={(ids, update) => timelineManager.update(ids, (asset) => Object.assign(asset, update))}
+      />
       <ButtonContextMenu icon={mdiDotsVertical} title={$t('menu')}>
         <DownloadAction menuItem filename={person.name || 'immich'} />
         <MenuOption

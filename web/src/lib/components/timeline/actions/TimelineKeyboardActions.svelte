@@ -7,6 +7,8 @@
   } from '$lib/components/timeline/actions/focus-actions';
   import type { AssetMultiSelectManager } from '$lib/managers/asset-multi-select-manager.svelte';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
+  import { authManager } from '$lib/managers/auth-manager.svelte';
+  import { COMPARE_MAX, COMPARE_MIN, compareManager } from '$lib/managers/compare-manager.svelte';
   import { eventManager } from '$lib/managers/event-manager.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { TimelineManager } from '$lib/managers/timeline-manager/timeline-manager.svelte';
@@ -73,6 +75,17 @@
     assetInteraction.clear();
   };
 
+  const openCompare = () => {
+    const count = assetInteraction.assets.length;
+    if (authManager.isSharedLink || count < COMPARE_MIN || count > COMPARE_MAX) {
+      return;
+    }
+    // Keep the selection: it is still there when the overlay closes.
+    compareManager.open(assetInteraction.assets, (ids, update) =>
+      timelineManager.update(ids, (asset) => Object.assign(asset, update)),
+    );
+  };
+
   const onSelectStart = (e: Event) => {
     if (!searchStore.isSearchEnabled && assetInteraction.selectionActive && keyboardManager.shift) {
       e.preventDefault();
@@ -137,6 +150,7 @@
         { shortcut: { key: 'D', ctrl: true }, onShortcut: () => assetInteraction.clear() },
         { shortcut: { key: 's' }, onShortcut: () => onStackAssets() },
         { shortcut: { key: 'a', shift: true }, onShortcut: toggleArchive },
+        { shortcut: { key: 'c' }, onShortcut: openCompare },
         ...getBulkUserStateShortcuts({
           getAssets: () => assetInteraction.assets,
           onRated: (ids, rating) => timelineManager.update(ids, (asset) => (asset.rating = rating)),

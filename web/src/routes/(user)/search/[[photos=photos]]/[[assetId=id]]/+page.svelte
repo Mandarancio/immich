@@ -15,6 +15,7 @@
   import DownloadAction from '$lib/components/timeline/actions/DownloadAction.svelte';
   import FavoriteAction from '$lib/components/timeline/actions/FavoriteAction.svelte';
   import SetColorLabelAction from '$lib/components/timeline/actions/SetColorLabelAction.svelte';
+  import CompareAction from '$lib/components/timeline/actions/CompareAction.svelte';
   import SetFlagAction from '$lib/components/timeline/actions/SetFlagAction.svelte';
   import SetRatingAction from '$lib/components/timeline/actions/SetRatingAction.svelte';
   import SetVisibilityAction from '$lib/components/timeline/actions/SetVisibilityAction.svelte';
@@ -435,6 +436,16 @@
                 const asset = searchResultAssets.find((asset) => asset.id === id);
                 if (asset) {
                   asset.flag = flag;
+                }
+              }
+            }}
+          />
+          <CompareAction
+            onUpdated={(ids, update) => {
+              for (const id of ids) {
+                const asset = searchResultAssets.find((asset) => asset.id === id);
+                if (asset) {
+                  Object.assign(asset, update);
                 }
               }
             }}

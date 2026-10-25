@@ -1,6 +1,7 @@
 <script lang="ts">
   import { page } from '$app/state';
   import UploadCover from './DragAndDropUploadOverlay.svelte';
+  import CompareView from '$lib/components/compare/CompareView.svelte';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
   import type { Snippet } from 'svelte';
   interface Props {
@@ -26,6 +27,7 @@
   {@render children?.()}
 </div>
 <UploadCover />
+<CompareView />
 
 <style>
   :root {

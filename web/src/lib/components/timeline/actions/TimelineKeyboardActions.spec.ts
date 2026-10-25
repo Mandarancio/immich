@@ -3,6 +3,7 @@ import { fireEvent, render } from '@testing-library/svelte';
 import TimelineKeyboardActions from '$lib/components/timeline/actions/TimelineKeyboardActions.svelte';
 import { AssetMultiSelectManager } from '$lib/managers/asset-multi-select-manager.svelte';
 import { authManager } from '$lib/managers/auth-manager.svelte';
+import { compareManager } from '$lib/managers/compare-manager.svelte';
 import { TimelineManager } from '$lib/managers/timeline-manager/timeline-manager.svelte';
 import { timelineAssetFactory } from '@test-data/factories/asset-factory';
 import { preferencesFactory } from '@test-data/factories/preferences-factory';
@@ -109,5 +110,83 @@ describe('TimelineKeyboardActions rating and color shortcuts', () => {
     await fireEvent.keyDown(document.body, { key: 'k' });
 
     expect(updateAssets).not.toHaveBeenCalled();
+  });
+});
+
+describe('TimelineKeyboardActions compare shortcut', () => {
+  let selection: AssetMultiSelectManager;
+  let timelineManager: TimelineManager;
+
+  const renderActions = () =>
+    render(TimelineKeyboardActions, {
+      timelineManager,
+      assetInteraction: selection,
+      scrollToAsset: () => false,
+    });
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    compareManager.close();
+    authManager.setUser(userAdminFactory.build({ id: 'viewer' }));
+    authManager.setPreferences(preferencesFactory.build({ ratings: { enabled: true } }));
+    timelineManager = new TimelineManager();
+    selection = new AssetMultiSelectManager();
+  });
+
+  afterEach(() => {
+    compareManager.close();
+  });
+
+  it.each([2, 6])('opens the compare view with %i selected assets and keeps the selection', async (count) => {
+    const assets = timelineAssetFactory.buildList(count);
+    selection.selectAssets(assets);
+    const open = vi.spyOn(compareManager, 'open');
+    renderActions();
+
+    await fireEvent.keyDown(document.body, { key: 'c' });
+
+    expect(open).toHaveBeenCalledWith(assets, expect.any(Function));
+    expect(compareManager.isOpen).toBe(true);
+    expect(selection.selectionActive).toBe(true);
+  });
+
+  it('patches the timeline through the onUpdated callback', async () => {
+    selection.selectAssets(timelineAssetFactory.buildList(2));
+    const update = vi
+      .spyOn(timelineManager, 'update')
+      .mockReturnValue({ updated: new Set(), notUpdated: new Set(), changedGeometry: false });
+    const open = vi.spyOn(compareManager, 'open');
+    renderActions();
+
+    await fireEvent.keyDown(document.body, { key: 'c' });
+    const onUpdated = open.mock.calls[0][1]!;
+    onUpdated(['a'], { flag: AssetFlag.Reject, rating: 2 });
+
+    expect(update).toHaveBeenCalledWith(['a'], expect.any(Function));
+    const asset = timelineAssetFactory.build({ flag: null, rating: null });
+    update.mock.calls[0][1](asset);
+    expect(asset).toMatchObject({ flag: AssetFlag.Reject, rating: 2 });
+  });
+
+  it.each([0, 1, 7])('does nothing with %i selected assets', async (count) => {
+    selection.selectAssets(timelineAssetFactory.buildList(count));
+    const open = vi.spyOn(compareManager, 'open');
+    renderActions();
+
+    await fireEvent.keyDown(document.body, { key: 'c' });
+
+    expect(open).not.toHaveBeenCalled();
+    expect(compareManager.isOpen).toBe(false);
+  });
+
+  it('does nothing in a shared-link context', async () => {
+    selection.selectAssets(timelineAssetFactory.buildList(3));
+    vi.spyOn(authManager, 'isSharedLink', 'get').mockReturnValue(true);
+    const open = vi.spyOn(compareManager, 'open');
+    renderActions();
+
+    await fireEvent.keyDown(document.body, { key: 'c' });
+
+    expect(open).not.toHaveBeenCalled();
   });
 });

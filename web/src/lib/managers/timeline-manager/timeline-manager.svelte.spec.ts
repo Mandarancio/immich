@@ -442,6 +442,22 @@ describe('TimelineManager', () => {
       expect(remaining.map((asset) => asset.id)).toEqual([keep.id]);
     });
 
+    it('patches an asset through update and evicts a rejected one behind a flags filter', async () => {
+      const timelineManager = new TimelineManager();
+      await timelineManager.updateOptions({ filter: { flags: [AssetFlag.Pick, 'none'] } });
+      const keep = build({ flag: null, rating: null, colorLabel: null });
+      const evict = build({ flag: null });
+      timelineManager.upsertAssets([keep, evict]);
+      expect(timelineManager.assetCount).toEqual(2);
+
+      const update = { flag: AssetFlag.Reject, rating: 4, colorLabel: AssetColorLabel.Green };
+      timelineManager.update([evict.id], (asset) => Object.assign(asset, update));
+      timelineManager.update([keep.id], (asset) => Object.assign(asset, { flag: AssetFlag.Pick, rating: 5 }));
+
+      expect(timelineManager.assetCount).toEqual(1);
+      expect(await getAssets(timelineManager)).toMatchObject([{ id: keep.id, flag: AssetFlag.Pick, rating: 5 }]);
+    });
+
     it('applies flag updates to existing assets, including null to value and back', async () => {
       const timelineManager = new TimelineManager();
       await timelineManager.updateOptions({});
