@@ -1,6 +1,7 @@
 <script lang="ts">
   import { matchesShortcut, type Shortcut } from '$lib/actions/shortcut';
   import CompareSlot from '$lib/components/compare/CompareSlot.svelte';
+  import CompareToolbar from '$lib/components/compare/CompareToolbar.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { compareManager } from '$lib/managers/compare-manager.svelte';
   import { handlePromiseError } from '$lib/utils';
@@ -50,6 +51,8 @@
     ...colorBindings,
     { shortcut: { key: 'Backspace' }, run: () => compareManager.remove() },
     { shortcut: { key: 'z' }, run: () => compareManager.toggleActualSize() },
+    { shortcut: { key: 'f' }, run: () => compareManager.toggleFocusMode() },
+    { shortcut: { key: 'm' }, run: () => compareManager.toggleMagnifier() },
     { shortcut: { key: 'Escape' }, run: () => compareManager.close() },
   ];
 
@@ -62,6 +65,8 @@
     { keys: '6-9', label: $t('color_label') },
     { keys: '⌫', label: $t('remove') },
     { keys: 'Z', label: $t('compare_actual_size') },
+    { keys: 'F', label: $t('compare_focus_mode') },
+    { keys: 'M', label: $t('compare_magnifier') },
     { keys: 'Esc', label: $t('compare_exit') },
   ]);
 
@@ -148,9 +153,12 @@
         <span data-testid="compare-remaining" class="text-sm text-white/70">{compareManager.remaining}</span>
       </div>
 
-      {#if compareManager.remaining === 1}
-        <p role="status" class="rounded-sm bg-white/15 px-3 py-1 text-sm">{$t('compare_one_left')}</p>
-      {/if}
+      <div class="flex min-w-0 flex-1 items-center justify-center gap-4">
+        <CompareToolbar />
+        {#if compareManager.remaining === 1}
+          <p role="status" class="truncate rounded-sm bg-white/15 px-3 py-1 text-sm">{$t('compare_one_left')}</p>
+        {/if}
+      </div>
 
       <IconButton
         shape="round"
@@ -168,7 +176,7 @@
       style:grid-template-columns="repeat({grid.columns}, 1fr)"
       style:grid-template-rows="repeat({grid.rows}, 1fr)"
     >
-      {#each compareManager.visible as asset (asset.id)}
+      {#each compareManager.rendered as asset (asset.id)}
         <CompareSlot {asset} focused={asset.id === compareManager.focusedId} />
       {/each}
     </div>

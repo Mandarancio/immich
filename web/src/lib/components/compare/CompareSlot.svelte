@@ -11,7 +11,7 @@
   import { Icon } from '@immich/ui';
   import { mdiClose, mdiFlag, mdiStar } from '@mdi/js';
   import { createZoomImageWheel, type ZoomImageWheelState } from '@zoom-image/core';
-  import { onMount, untrack } from 'svelte';
+  import { onDestroy, onMount, untrack } from 'svelte';
   import { t } from 'svelte-i18n';
 
   type Props = {
@@ -21,6 +21,9 @@
 
   const { asset, focused }: Props = $props();
 
+  type Lens = { x: number; y: number; width: number; height: number; u: number; v: number };
+
+  const LENS_SIZE = 160;
   const MAX_ZOOM = 10;
   const ZOOM_EPSILON = 0.001;
   const POSITION_EPSILON = 0.5;
@@ -29,6 +32,10 @@
   let originalLoaded = $state(false);
   let container = $state<HTMLElement>();
   let imageElement = $state<HTMLImageElement>();
+  let rootElement = $state<HTMLElement>();
+  // set once the image has loaded, the aspect ratio is needed to locate the picture inside the element
+  let naturalSize = $state<{ width: number; height: number }>();
+  let lens = $state<Lens>();
 
   let zoomInstance: ReturnType<typeof createZoomImageWheel> | undefined;
   let unsubscribeZoom: (() => void) | undefined;
@@ -166,10 +173,114 @@
     const renderedWidth = Math.min(image.clientWidth, (image.clientHeight * image.naturalWidth) / image.naturalHeight);
     compareManager.setNaturalZoom(asset.id, image.naturalWidth / renderedWidth);
   };
+
+  const onImageLoad = () => {
+    const image = imageElement;
+    if (image?.naturalWidth && image.naturalHeight) {
+      naturalSize = { width: image.naturalWidth, height: image.naturalHeight };
+    }
+    reportNaturalZoom();
+  };
+
+  /** The picture (not the letterboxed element) in viewport coordinates, including the zoom transform. */
+  const getPictureRect = () => {
+    const image = imageElement;
+    if (!image?.naturalWidth || !image.naturalHeight) {
+      return;
+    }
+    const box = image.getBoundingClientRect();
+    if (!box.width || !box.height) {
+      return;
+    }
+    const scale = Math.min(box.width / image.naturalWidth, box.height / image.naturalHeight);
+    const width = image.naturalWidth * scale;
+    const height = image.naturalHeight * scale;
+    return { left: box.left + (box.width - width) / 2, top: box.top + (box.height - height) / 2, width, height };
+  };
+
+  const onPointerMove = (event: PointerEvent) => {
+    if (!compareManager.magnifierEnabled) {
+      return;
+    }
+    const rect = getPictureRect();
+    if (!rect) {
+      compareManager.clearMagnifierPoint(asset.id);
+      return;
+    }
+    const u = (event.clientX - rect.left) / rect.width;
+    const v = (event.clientY - rect.top) / rect.height;
+    if (u >= 0 && u <= 1 && v >= 0 && v <= 1) {
+      compareManager.setMagnifierPoint(asset.id, u, v);
+    } else {
+      compareManager.clearMagnifierPoint(asset.id);
+    }
+  };
+
+  const onPointerLeave = () => compareManager.clearMagnifierPoint(asset.id);
+
+  // keep the lens on the same relative image position, following the zoom and pan of the slot
+  $effect(() => {
+    const enabled = compareManager.magnifierEnabled;
+    const point = compareManager.magnifierPoint;
+    // re-run when the zoom or pan changes, or the image is swapped
+    void compareManager.zoomState;
+    void src;
+    void compareManager.magnifierLevel;
+    void naturalSize;
+    untrack(() => {
+      const root = rootElement;
+      const rect = enabled && point ? getPictureRect() : undefined;
+      if (!root || !rect || !point) {
+        lens = undefined;
+        return;
+      }
+      const rootBox = root.getBoundingClientRect();
+      lens = {
+        x: rect.left - rootBox.left + point.u * rect.width,
+        y: rect.top - rootBox.top + point.v * rect.height,
+        width: rect.width,
+        height: rect.height,
+        u: point.u,
+        v: point.v,
+      };
+    });
+  });
+
+  const lensStyle = $derived.by(() => {
+    if (!lens) {
+      return;
+    }
+    const level = compareManager.magnifierLevel;
+    const half = LENS_SIZE / 2;
+    return [
+      `left: ${lens.x - half}px`,
+      `top: ${lens.y - half}px`,
+      `width: ${LENS_SIZE}px`,
+      `height: ${LENS_SIZE}px`,
+      `background-image: url("${src}")`,
+      'background-repeat: no-repeat',
+      'background-origin: border-box',
+      `background-size: ${lens.width * level}px ${lens.height * level}px`,
+      `background-position: ${half - lens.u * lens.width * level}px ${half - lens.v * lens.height * level}px`,
+    ].join('; ');
+  });
+
+  // the slot size changes with the grid (e.g. focus mode), which changes the natural zoom
+  onMount(() => {
+    if (!container) {
+      return;
+    }
+    const observer = new ResizeObserver(() => reportNaturalZoom());
+    observer.observe(container);
+    return () => observer.disconnect();
+  });
+
+  onDestroy(() => compareManager.clearMagnifierPoint(asset.id));
 </script>
 
 <!-- keyboard handling is done by the compare view -->
 <div
+  bind:this={rootElement}
   data-testid="compare-slot"
   role="presentation"
   class={['relative flex min-h-0 min-w-0 flex-col overflow-hidden bg-black transition-opacity', dimmed && 'opacity-40']}
@@ -182,7 +293,13 @@
     ></div>
   {/if}
 
-  <div bind:this={container} class="min-h-0 flex-1">
+  <div
+    bind:this={container}
+    role="presentation"
+    class={['min-h-0 flex-1', compareManager.magnifierEnabled && 'cursor-crosshair']}
+    onpointermove={onPointerMove}
+    onpointerleave={onPointerLeave}
+  >
     <img
       bind:this={imageElement}
       data-testid="compare-slot-image"
@@ -190,9 +307,17 @@
       alt=""
       class="size-full object-contain select-none"
       draggable="false"
-      onload={reportNaturalZoom}
+      onload={onImageLoad}
     />
   </div>
+
+  {#if lensStyle}
+    <div
+      data-testid="compare-slot-lens"
+      class="pointer-events-none absolute z-10 rounded-full border-2 border-white/80 shadow-lg"
+      style={lensStyle}
+    ></div>
+  {/if}
 
   <div
     class="pointer-events-none absolute inset-x-0 top-0 flex items-center gap-2 bg-linear-to-b from-black/70 to-transparent p-2 text-white"

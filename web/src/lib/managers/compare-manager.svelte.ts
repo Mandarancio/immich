@@ -14,6 +14,8 @@ import { nextFlag } from '$lib/utils/flag';
 export const COMPARE_MIN = 2;
 export const COMPARE_MAX = 6;
 export const MAX_CONCURRENT_ORIGINALS = 3;
+export const MAGNIFIER_LEVELS = [2, 4, 8];
+const DEFAULT_MAGNIFIER_LEVEL = 4;
 
 /** Zoom used by `toggleActualSize` when the natural zoom of the focused slot is not known (yet). */
 const FALLBACK_ACTUAL_SIZE_ZOOM = 2;
@@ -52,6 +54,11 @@ class CompareManager {
   focusedId = $state<string | undefined>();
   zoomState = $state<ZoomImageWheelState>(createDefaultZoomState());
   zoomSource = $state<string | undefined>();
+  focusMode = $state(false);
+  magnifierEnabled = $state(false);
+  magnifierLevel = $state(DEFAULT_MAGNIFIER_LEVEL);
+  /** Normalised (0..1) position inside the rendered picture of the slot `sourceId` the pointer is over. */
+  magnifierPoint = $state<{ sourceId: string; u: number; v: number } | undefined>();
   #naturalZoom: Record<string, number> = {};
   #onUpdated?: (ids: string[], update: CompareUpdate) => void;
 
@@ -59,8 +66,14 @@ class CompareManager {
     return this.assets.filter(({ id }) => !this.removedIds.includes(id));
   }
 
+  /** What is actually shown: only the focused photo in focus mode, else all visible photos. */
+  get rendered(): TimelineAsset[] {
+    const focused = this.focused;
+    return this.focusMode && focused ? [focused] : this.visible;
+  }
+
   get grid() {
-    return compareGrid(this.visible.length);
+    return compareGrid(this.rendered.length);
   }
 
   get focused(): TimelineAsset | undefined {
@@ -71,12 +84,12 @@ class CompareManager {
     return this.visible.length;
   }
 
-  /** Assets whose original should be loaded: none unless zoomed in, the focused one first. */
+  /** Assets whose original should be loaded: none unless zoomed in or magnifying, the focused one first. */
   get originalIds(): string[] {
-    if (this.zoomState.currentZoom <= 1) {
+    if (this.zoomState.currentZoom <= 1 && !this.magnifierEnabled) {
       return [];
     }
-    const ids = this.visible.map(({ id }) => id);
+    const ids = this.rendered.map(({ id }) => id);
     const focusedId = this.focusedId;
     const ordered = focusedId && ids.includes(focusedId) ? [focusedId, ...ids.filter((id) => id !== focusedId)] : ids;
     return ordered.slice(0, MAX_CONCURRENT_ORIGINALS);
@@ -91,6 +104,7 @@ class CompareManager {
     this.removedIds = [];
     this.focusedId = assets[0].id;
     this.#resetZoom();
+    this.#resetTools();
     this.#naturalZoom = {};
     this.#onUpdated = onUpdated;
     this.isOpen = true;
@@ -103,6 +117,7 @@ class CompareManager {
     this.removedIds = [];
     this.focusedId = undefined;
     this.#resetZoom();
+    this.#resetTools();
     this.#naturalZoom = {};
     this.#onUpdated = undefined;
   }
@@ -154,6 +169,35 @@ class CompareManager {
     // no source: every slot follows
     this.zoomState = { ...this.zoomState, currentZoom: target, currentPositionX: 0, currentPositionY: 0 };
     this.zoomSource = undefined;
+  }
+
+  toggleFocusMode() {
+    this.focusMode = !this.focusMode;
+    // pan offsets (px) are meaningless across slot sizes
+    this.#resetZoom();
+  }
+
+  toggleMagnifier() {
+    this.magnifierEnabled = !this.magnifierEnabled;
+    if (!this.magnifierEnabled) {
+      this.magnifierPoint = undefined;
+    }
+  }
+
+  setMagnifierLevel(level: number) {
+    if (MAGNIFIER_LEVELS.includes(level)) {
+      this.magnifierLevel = level;
+    }
+  }
+
+  setMagnifierPoint(sourceId: string, u: number, v: number) {
+    this.magnifierPoint = { sourceId, u, v };
+  }
+
+  clearMagnifierPoint(sourceId: string) {
+    if (this.magnifierPoint?.sourceId === sourceId) {
+      this.magnifierPoint = undefined;
+    }
   }
 
   setNaturalZoom(id: string, zoom: number) {
@@ -208,6 +252,13 @@ class CompareManager {
   #resetZoom() {
     this.zoomState = createDefaultZoomState();
     this.zoomSource = undefined;
+  }
+
+  #resetTools() {
+    this.focusMode = false;
+    this.magnifierEnabled = false;
+    this.magnifierLevel = DEFAULT_MAGNIFIER_LEVEL;
+    this.magnifierPoint = undefined;
   }
 
   #moveFocus(step: 1 | -1) {

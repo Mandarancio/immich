@@ -4,6 +4,7 @@ import {
   COMPARE_MAX,
   compareGrid,
   compareManager,
+  MAGNIFIER_LEVELS,
   MAX_CONCURRENT_ORIGINALS,
 } from '$lib/managers/compare-manager.svelte';
 import type { TimelineAsset } from '$lib/managers/timeline-manager/types';
@@ -412,6 +413,173 @@ describe('CompareManager', () => {
       compareManager.open(build(2));
       compareManager.toggleActualSize();
       expect(compareManager.zoomState.currentZoom).toBe(2);
+    });
+  });
+
+  describe('focus mode', () => {
+    it('renders only the focused photo on a 1x1 grid, and everything again when turned off', () => {
+      const assets = build(3);
+      compareManager.open(assets);
+      expect(ids(compareManager.rendered)).toEqual(ids(assets));
+      expect(compareManager.grid).toEqual({ columns: 3, rows: 1 });
+
+      compareManager.toggleFocusMode();
+      expect(compareManager.focusMode).toBe(true);
+      expect(ids(compareManager.rendered)).toEqual([assets[0].id]);
+      expect(compareManager.grid).toEqual({ columns: 1, rows: 1 });
+      expect(compareManager.remaining).toBe(3);
+      expect(ids(compareManager.visible)).toEqual(ids(assets));
+
+      compareManager.toggleFocusMode();
+      expect(ids(compareManager.rendered)).toEqual(ids(assets));
+      expect(compareManager.grid).toEqual({ columns: 3, rows: 1 });
+    });
+
+    it('keeps the arrows flipping through the photos', () => {
+      const assets = build(3);
+      compareManager.open(assets);
+      compareManager.toggleFocusMode();
+
+      compareManager.focusNext();
+      expect(ids(compareManager.rendered)).toEqual([assets[1].id]);
+      compareManager.focusPrevious();
+      compareManager.focusPrevious();
+      expect(ids(compareManager.rendered)).toEqual([assets[2].id]);
+    });
+
+    it('resets the shared zoom when toggled', () => {
+      const assets = build(2);
+      compareManager.open(assets);
+      compareManager.reportZoom(assets[0].id, {
+        ...compareManager.zoomState,
+        currentZoom: 3,
+        currentPositionX: -40,
+        currentPositionY: -20,
+      });
+
+      compareManager.toggleFocusMode();
+
+      expect(compareManager.zoomState).toMatchObject({ currentZoom: 1, currentPositionX: 0, currentPositionY: 0 });
+      expect(compareManager.zoomSource).toBeUndefined();
+    });
+
+    it('shows the next photo when the focused one is removed', () => {
+      const assets = build(3);
+      compareManager.open(assets);
+      compareManager.toggleFocusMode();
+
+      compareManager.remove();
+
+      expect(compareManager.focusedId).toBe(assets[1].id);
+      expect(ids(compareManager.rendered)).toEqual([assets[1].id]);
+      expect(compareManager.remaining).toBe(2);
+    });
+  });
+
+  describe('magnifier', () => {
+    it('toggles and only accepts the known levels', () => {
+      compareManager.open(build(2));
+      expect(compareManager.magnifierEnabled).toBe(false);
+      expect(compareManager.magnifierLevel).toBe(4);
+
+      compareManager.toggleMagnifier();
+      expect(compareManager.magnifierEnabled).toBe(true);
+
+      for (const level of MAGNIFIER_LEVELS) {
+        compareManager.setMagnifierLevel(level);
+        expect(compareManager.magnifierLevel).toBe(level);
+      }
+      compareManager.setMagnifierLevel(3);
+      compareManager.setMagnifierLevel(0);
+      expect(compareManager.magnifierLevel).toBe(8);
+    });
+
+    it('shares the point and only the source can clear it', () => {
+      const assets = build(2);
+      compareManager.open(assets);
+
+      compareManager.setMagnifierPoint(assets[0].id, 0.25, 0.75);
+      expect(compareManager.magnifierPoint).toEqual({ sourceId: assets[0].id, u: 0.25, v: 0.75 });
+
+      compareManager.clearMagnifierPoint(assets[1].id);
+      expect(compareManager.magnifierPoint).toBeDefined();
+
+      compareManager.setMagnifierPoint(assets[1].id, 0.5, 0.5);
+      expect(compareManager.magnifierPoint?.sourceId).toBe(assets[1].id);
+
+      compareManager.clearMagnifierPoint(assets[1].id);
+      expect(compareManager.magnifierPoint).toBeUndefined();
+    });
+
+    it('clears the point when turned off', () => {
+      const assets = build(2);
+      compareManager.open(assets);
+      compareManager.toggleMagnifier();
+      compareManager.setMagnifierPoint(assets[0].id, 0.5, 0.5);
+
+      compareManager.toggleMagnifier();
+
+      expect(compareManager.magnifierPoint).toBeUndefined();
+    });
+
+    it('wants originals while enabled, even when not zoomed, focused first and capped', () => {
+      const assets = build(5);
+      compareManager.open(assets);
+      compareManager.focus(assets[3].id);
+      expect(compareManager.originalIds).toEqual([]);
+
+      compareManager.toggleMagnifier();
+
+      expect(compareManager.zoomState.currentZoom).toBe(1);
+      expect(compareManager.originalIds).toHaveLength(MAX_CONCURRENT_ORIGINALS);
+      expect(compareManager.originalIds[0]).toBe(assets[3].id);
+
+      compareManager.toggleMagnifier();
+      expect(compareManager.originalIds).toEqual([]);
+    });
+
+    it('only wants the original of the shown photo in focus mode', () => {
+      const assets = build(3);
+      compareManager.open(assets);
+      compareManager.toggleMagnifier();
+      compareManager.toggleFocusMode();
+
+      expect(compareManager.originalIds).toEqual([assets[0].id]);
+    });
+  });
+
+  describe('tool state lifecycle', () => {
+    const dirty = (assets: TimelineAsset[]) => {
+      compareManager.toggleFocusMode();
+      compareManager.toggleMagnifier();
+      compareManager.setMagnifierLevel(8);
+      compareManager.setMagnifierPoint(assets[0].id, 0.1, 0.2);
+    };
+    const expectReset = () => {
+      expect(compareManager.focusMode).toBe(false);
+      expect(compareManager.magnifierEnabled).toBe(false);
+      expect(compareManager.magnifierLevel).toBe(4);
+      expect(compareManager.magnifierPoint).toBeUndefined();
+    };
+
+    it('open resets the tools of a previous session', () => {
+      const assets = build(2);
+      compareManager.open(assets);
+      dirty(assets);
+
+      compareManager.open(build(2));
+
+      expectReset();
+    });
+
+    it('close resets the tools', () => {
+      const assets = build(2);
+      compareManager.open(assets);
+      dirty(assets);
+
+      compareManager.close();
+
+      expectReset();
     });
   });
 });

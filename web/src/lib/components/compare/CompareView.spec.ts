@@ -2,6 +2,7 @@ import { AssetColorLabel, AssetFlag, getAssetInfo } from '@immich/sdk';
 import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import type { Mock } from 'vitest';
+import { getResizeObserverMock } from '$lib/__mocks__/resize-observer.mock';
 import TestWrapper from '$lib/components/TestWrapper.svelte';
 import CompareView from '$lib/components/compare/CompareView.svelte';
 import { authManager } from '$lib/managers/auth-manager.svelte';
@@ -41,6 +42,7 @@ const press = async (key: string, init: KeyboardEventInit = {}) => {
 
 describe('CompareView', () => {
   beforeEach(() => {
+    vi.stubGlobal('ResizeObserver', getResizeObserverMock());
     compareManager.close();
     authManager.setUser(userAdminFactory.build({ id: 'viewer' }));
     authManager.setPreferences(preferencesFactory.build({ ratings: { enabled: true } }));
@@ -56,6 +58,7 @@ describe('CompareView', () => {
     compareManager.close();
     authManager.reset();
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
     document.body.style.overflow = '';
   });
 
@@ -147,6 +150,8 @@ describe('CompareView', () => {
       ['ArrowUp', 'focusPrevious'],
       ['Backspace', 'remove'],
       ['z', 'toggleActualSize'],
+      ['f', 'toggleFocusMode'],
+      ['m', 'toggleMagnifier'],
       ['Escape', 'close'],
     ] as const)('%s calls %s', async (key, method) => {
       const spy = vi.spyOn(compareManager, method);
@@ -214,6 +219,8 @@ describe('CompareView', () => {
         ['7', 'toggleColor', AssetColorLabel.Yellow],
         ['Backspace', 'remove'],
         ['z', 'toggleActualSize'],
+        ['f', 'toggleFocusMode'],
+        ['m', 'toggleMagnifier'],
       ] as const)('%s ignores repeats but handles the first press', async (key, method, ...args) => {
         const spy = vi.spyOn(compareManager, method as 'toggleFlag');
 
@@ -354,6 +361,96 @@ describe('CompareView', () => {
       compareManager.close();
       await tick();
       expect(document.body.style.overflow).toBe('');
+    });
+  });
+
+  describe('tools', () => {
+    beforeEach(() => {
+      compareManager.open(timelineAssetFactory.buildList(3));
+      mount();
+    });
+
+    it('renders a labelled toolbar', () => {
+      const toolbar = screen.getByTestId('compare-toolbar');
+      expect(toolbar.getAttribute('role')).toBe('toolbar');
+      expect(toolbar.getAttribute('aria-label')).toBe('compare_tools');
+    });
+
+    it('toggles the focus mode from the toolbar', async () => {
+      const button = screen.getByTestId('compare-tool-focus');
+      expect(button.getAttribute('aria-pressed')).toBe('false');
+
+      await fireEvent.click(button);
+      expect(compareManager.focusMode).toBe(true);
+      expect(button.getAttribute('aria-pressed')).toBe('true');
+
+      await fireEvent.click(button);
+      expect(compareManager.focusMode).toBe(false);
+      expect(button.getAttribute('aria-pressed')).toBe('false');
+    });
+
+    it('toggles the magnifier from the toolbar', async () => {
+      const button = screen.getByTestId('compare-tool-magnifier');
+      expect(button.getAttribute('aria-pressed')).toBe('false');
+
+      await fireEvent.click(button);
+      expect(compareManager.magnifierEnabled).toBe(true);
+      expect(button.getAttribute('aria-pressed')).toBe('true');
+
+      await fireEvent.click(button);
+      expect(compareManager.magnifierEnabled).toBe(false);
+    });
+
+    it('shows the level buttons only while the magnifier is on and sets the level', async () => {
+      expect(screen.queryByTestId('compare-magnifier-level-4')).toBeNull();
+
+      await press('m');
+      expect(screen.getByRole('group', { name: 'compare_magnifier_level' })).toBeDefined();
+      expect(screen.getByTestId('compare-magnifier-level-4').getAttribute('aria-pressed')).toBe('true');
+      expect(screen.getByTestId('compare-magnifier-level-2').getAttribute('aria-pressed')).toBe('false');
+
+      const setLevel = vi.spyOn(compareManager, 'setMagnifierLevel');
+      await fireEvent.click(screen.getByTestId('compare-magnifier-level-8'));
+      expect(setLevel).toHaveBeenCalledWith(8);
+      expect(compareManager.magnifierLevel).toBe(8);
+      expect(screen.getByTestId('compare-magnifier-level-8').getAttribute('aria-pressed')).toBe('true');
+      expect(screen.getByTestId('compare-magnifier-level-4').getAttribute('aria-pressed')).toBe('false');
+
+      await press('m');
+      expect(screen.queryByTestId('compare-magnifier-level-4')).toBeNull();
+    });
+
+    it('f and m flip the toolbar state', async () => {
+      await press('f');
+      await press('m');
+
+      expect(screen.getByTestId('compare-tool-focus').getAttribute('aria-pressed')).toBe('true');
+      expect(screen.getByTestId('compare-tool-magnifier').getAttribute('aria-pressed')).toBe('true');
+    });
+
+    it('lists the shortcuts in the hint bar', () => {
+      const hints = screen.getByTestId('compare-hints');
+      const keys = [...hints.querySelectorAll('kbd')].map((kbd) => kbd.textContent);
+      expect(keys).toContain('F');
+      expect(keys).toContain('M');
+      expect(hints.textContent).toContain('compare_focus_mode');
+      expect(hints.textContent).toContain('compare_magnifier');
+    });
+
+    it('renders only the focused slot in focus mode', async () => {
+      expect(screen.getAllByTestId('compare-slot')).toHaveLength(3);
+
+      await press('f');
+      expect(screen.getAllByTestId('compare-slot')).toHaveLength(1);
+      expect(screen.getByTestId('compare-grid').style.gridTemplateColumns).toBe('repeat(1, 1fr)');
+      expect(screen.getByTestId('compare-remaining').textContent).toContain('3');
+
+      await press('ArrowRight');
+      expect(screen.getAllByTestId('compare-slot')).toHaveLength(1);
+      expect(compareManager.focusedId).toBe(compareManager.visible[1].id);
+
+      await press('f');
+      expect(screen.getAllByTestId('compare-slot')).toHaveLength(3);
     });
   });
 });
