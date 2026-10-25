@@ -1,6 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 import { Kysely } from 'kysely';
-import { AlbumUserRole, AssetColorLabel, AssetFlag, AssetOrderBy, AssetVisibility, SharedLinkType } from 'src/enum.js';
+import { AlbumUserRole, AssetColorLabel, AssetFlag, AssetVisibility, SharedLinkType } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -111,8 +111,12 @@ describe(TimelineService.name, () => {
     it('should allow filtering by favorite on a timeline that includes partners', async () => {
       const { sut } = setup();
       const auth = factory.auth();
-      await expect(sut.getTimeBuckets(auth, { withPartners: true, visibility: AssetVisibility.Timeline, isFavorite: false })).resolves.toEqual([]);
-      await expect(sut.getTimeBuckets(auth, { withPartners: true, visibility: AssetVisibility.Timeline, isFavorite: true })).resolves.toEqual([]);
+      await expect(
+        sut.getTimeBuckets(auth, { withPartners: true, visibility: AssetVisibility.Timeline, isFavorite: false }),
+      ).resolves.toEqual([]);
+      await expect(
+        sut.getTimeBuckets(auth, { withPartners: true, visibility: AssetVisibility.Timeline, isFavorite: true }),
+      ).resolves.toEqual([]);
     });
 
     it('should allow filtering by favorite on a partner timeline', async () => {

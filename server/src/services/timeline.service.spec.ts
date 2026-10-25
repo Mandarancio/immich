@@ -1,5 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
-import { AssetColorLabel, AssetVisibility } from 'src/enum.js';
+import { AssetVisibility } from 'src/enum.js';
 import { TimelineService } from 'src/services/timeline.service.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';

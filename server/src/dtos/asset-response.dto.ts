@@ -223,7 +223,7 @@ export function mapAsset(entity: MaybeDehydrated<MapAsset>, options: AssetMapOpt
   }
 
   const state = options.viewerState?.get(entity.id);
-  const isOwner = auth?.user.id === entity.ownerId;
+  const isOwner = options.auth?.user.id === entity.ownerId;
 
   return {
     id: entity.id,

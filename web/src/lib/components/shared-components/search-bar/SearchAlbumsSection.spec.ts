@@ -26,9 +26,7 @@ describe('SearchAlbumsSection component', () => {
       props: { title: undefined, parentPromise: Promise.resolve([holiday, family]) },
     });
 
-    // @ts-expect-error pending a type fix: https://github.com/testing-library/jest-dom/pull/742/changes
     expect(await screen.findByRole('button', { name: 'Holiday' })).toBeInTheDocument();
-    // @ts-expect-error pending a type fix: https://github.com/testing-library/jest-dom/pull/742/changes
     expect(screen.getByRole('button', { name: 'Family' })).toBeInTheDocument();
   });
 
@@ -40,7 +38,6 @@ describe('SearchAlbumsSection component', () => {
 
     await user.click(await screen.findByRole('button', { name: 'Holiday' }));
 
-    // @ts-expect-error pending a type fix: https://github.com/testing-library/jest-dom/pull/742/changes
     expect(screen.queryByRole('button', { name: 'Holiday' })).not.toBeInTheDocument();
     expect([...searchManager.filter.albumIds]).toEqual(['album-2']);
   });

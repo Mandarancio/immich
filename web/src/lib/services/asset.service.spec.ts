@@ -1,10 +1,8 @@
-import { AssetColorLabel, AssetFlag, getAssetInfo, updateAsset, type UserConfigDto } from '@immich/sdk';
+import { AssetColorLabel, AssetFlag, getAssetInfo, updateAsset } from '@immich/sdk';
 import { toastManager } from '@immich/ui';
 import { vitest } from 'vitest';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import { eventManager } from '$lib/managers/event-manager.svelte';
-import { queryClient } from '$lib/queries/client';
-import { getUserConfigQuery } from '$lib/queries/config-user.query';
 import {
   getAssetActions,
   handleDownloadAsset,
