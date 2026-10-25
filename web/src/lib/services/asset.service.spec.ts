@@ -40,6 +40,7 @@ vi.mock(import('$lib/managers/feature-flags-manager.svelte'), function () {
 describe('AssetService', () => {
   describe('getAssetActions', () => {
     beforeEach(() => {
+      setSharedLink(undefined);
       authManager.setPreferences(preferencesFactory.build());
     });
 
@@ -51,6 +52,33 @@ describe('AssetService', () => {
       setSharedLink(sharedLinkFactory.build({ allowDownload: false }));
       const assetActions = getAssetActions(() => '', asset);
       expect(assetActions.SharedLinkDownload.$if?.()).toStrictEqual(true);
+    });
+
+    it('should offer favorite to a logged-in user who does not own the asset', () => {
+      const user = userAdminFactory.build({ id: 'viewer' });
+      const asset = assetFactory.build({ ownerId: 'someone-else', isFavorite: false });
+      authManager.setUser(user);
+      const assetActions = getAssetActions(() => '', asset);
+      expect(assetActions.Favorite.$if?.()).toStrictEqual(true);
+      expect(assetActions.Unfavorite.$if?.()).toStrictEqual(false);
+    });
+
+    it('should offer unfavorite for a favorited asset the user does not own', () => {
+      const user = userAdminFactory.build({ id: 'viewer' });
+      const asset = assetFactory.build({ ownerId: 'someone-else', isFavorite: true });
+      authManager.setUser(user);
+      const assetActions = getAssetActions(() => '', asset);
+      expect(assetActions.Favorite.$if?.()).toStrictEqual(false);
+      expect(assetActions.Unfavorite.$if?.()).toStrictEqual(true);
+    });
+
+    it('should not offer favorite on a shared link for a non-owner', () => {
+      const user = userAdminFactory.build({ id: 'viewer' });
+      const asset = assetFactory.build({ ownerId: 'someone-else', isFavorite: false });
+      authManager.setUser(user);
+      setSharedLink(sharedLinkFactory.build());
+      const assetActions = getAssetActions(() => '', asset);
+      expect(assetActions.Favorite.$if?.()).toStrictEqual(false);
     });
 
     it('should not allow shared link downloads if the user does not own the asset and shared link downloads are disabled', () => {
