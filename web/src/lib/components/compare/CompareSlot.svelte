@@ -172,10 +172,7 @@
 <div
   data-testid="compare-slot"
   role="presentation"
-  class={[
-    'relative flex min-h-0 min-w-0 flex-col overflow-hidden bg-black transition-opacity',
-    dimmed && 'opacity-40',
-  ]}
+  class={['relative flex min-h-0 min-w-0 flex-col overflow-hidden bg-black transition-opacity', dimmed && 'opacity-40']}
   onclick={() => compareManager.focus(asset.id)}
 >
   {#if focused}
