@@ -84,6 +84,12 @@ const BaseSearchSchema = z.object({
   // new in v3.2.0, but flat like the rest so it stays mutually exclusive with the structured filter
   colorLabels: ColorLabelsFilterSchema.optional().meta(ADDED_V3_2),
   flags: FlagsFilterSchema.optional().meta(ADDED_V3_2),
+  isLiked: z
+    .boolean()
+    .optional()
+    .describe('Filter by liked status: liked by any user in an album the viewer can access')
+    .meta(ADDED_V3_2),
+  isLikedByMe: z.boolean().optional().describe('Filter by assets liked by the viewer').meta(ADDED_V3_2),
 });
 
 const BaseSearchWithResultsSchema = BaseSearchSchema.extend({
@@ -288,6 +294,8 @@ const searchFilterBranchShape = {
   rating: NumberFilterNullableSchema,
   colorLabels: ColorLabelsFilterSchema,
   flags: FlagsFilterSchema,
+  isLiked: BoolFilterSchema,
+  isLikedByMe: BoolFilterSchema,
   fileSizeInBytes: NumberFilterSchema,
   takenAt: DateFilterSchema,
   createdAt: DateFilterSchema,
@@ -344,7 +352,7 @@ export const isFullyAlbumConfined = (filter: SearchFilter): boolean =>
   isAlbumConfined(filter) || (!!filter.or?.length && filter.or.every((branch) => isAlbumConfined(branch)));
 
 // flat fields added after the structured filter: not deprecated, but still exclusive with it
-const FLAT_ONLY_FIELDS = new Set(['colorLabels', 'flags']);
+const FLAT_ONLY_FIELDS = new Set(['colorLabels', 'flags', 'isLiked', 'isLikedByMe']);
 
 /**
  * The structured shape and the deprecated flat search fields are mutually exclusive

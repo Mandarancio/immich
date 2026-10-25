@@ -117,4 +117,49 @@ describe('SearchManager', () => {
     searchManager.reset();
     expect(searchManager.filter.flags).toEqual([]);
   });
+
+  it('starts with no liked filters', () => {
+    expect(searchManager.filter.display.isLiked).toBe(false);
+    expect(searchManager.filter.display.isLikedByMe).toBe(false);
+  });
+
+  it('submits the liked filters only when enabled', async () => {
+    await searchManager.submit();
+    expect(goto).toHaveBeenLastCalledWith(Route.search({}));
+
+    searchManager.filter.display.isLiked = true;
+    await searchManager.submit();
+    expect(goto).toHaveBeenLastCalledWith(Route.search({ isLiked: true }));
+
+    searchManager.filter.display.isLikedByMe = true;
+    await searchManager.submit();
+    expect(goto).toHaveBeenLastCalledWith(Route.search({ isLiked: true, isLikedByMe: true }));
+
+    searchManager.filter.display.isLiked = false;
+    searchManager.filter.display.isLikedByMe = false;
+    await searchManager.submit();
+    expect(goto).toHaveBeenLastCalledWith(Route.search({}));
+  });
+
+  it('restores the liked filters from a query and round-trips them', async () => {
+    searchManager.setQuery({ isLiked: true, isLikedByMe: true });
+    expect(searchManager.filter.display.isLiked).toBe(true);
+    expect(searchManager.filter.display.isLikedByMe).toBe(true);
+
+    await searchManager.submit();
+    expect(goto).toHaveBeenLastCalledWith(Route.search({ isLiked: true, isLikedByMe: true }));
+  });
+
+  it('restores only the liked filter that is set', () => {
+    searchManager.setQuery({ isLikedByMe: true });
+    expect(searchManager.filter.display.isLiked).toBe(false);
+    expect(searchManager.filter.display.isLikedByMe).toBe(true);
+  });
+
+  it('clears the liked filters on reset', () => {
+    searchManager.setQuery({ isLiked: true, isLikedByMe: true });
+    searchManager.reset();
+    expect(searchManager.filter.display.isLiked).toBe(false);
+    expect(searchManager.filter.display.isLikedByMe).toBe(false);
+  });
 });

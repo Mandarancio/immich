@@ -185,6 +185,8 @@
       visibility: $t('in_archive'),
       isFavorite: $t('favorite'),
       isNotInAlbum: $t('not_in_any_album'),
+      isLiked: $t('search_filter_liked'),
+      isLikedByMe: $t('search_filter_liked_by_me'),
       type: $t('media_type'),
       query: $t('context'),
       city: $t('city'),

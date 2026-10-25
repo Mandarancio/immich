@@ -2430,6 +2430,8 @@ export type SearchFilterBranch = {
     id?: IdFilter;
     isEncoded?: BoolFilter;
     isFavorite?: BoolFilter;
+    isLiked?: BoolFilter;
+    isLikedByMe?: BoolFilter;
     isMotion?: BoolFilter;
     isOffline?: BoolFilter;
     lensModel?: StringFilterNullable;
@@ -2468,6 +2470,8 @@ export type SearchFilter = {
     id?: IdFilter;
     isEncoded?: BoolFilter;
     isFavorite?: BoolFilter;
+    isLiked?: BoolFilter;
+    isLikedByMe?: BoolFilter;
     isMotion?: BoolFilter;
     isOffline?: BoolFilter;
     lensModel?: StringFilterNullable;
@@ -2522,6 +2526,10 @@ export type MetadataSearchDto = {
     isEncoded?: boolean;
     /** Filter by favorite status */
     isFavorite?: boolean;
+    /** Filter by liked status: liked by any user in an album the viewer can access */
+    isLiked?: boolean;
+    /** Filter by assets liked by the viewer */
+    isLikedByMe?: boolean;
     /** Filter by motion photo status */
     isMotion?: boolean;
     /** Filter assets not in any album */
@@ -2651,6 +2659,10 @@ export type RandomSearchDto = {
     isEncoded?: boolean;
     /** Filter by favorite status */
     isFavorite?: boolean;
+    /** Filter by liked status: liked by any user in an album the viewer can access */
+    isLiked?: boolean;
+    /** Filter by assets liked by the viewer */
+    isLikedByMe?: boolean;
     /** Filter by motion photo status */
     isMotion?: boolean;
     /** Filter assets not in any album */
@@ -2720,6 +2732,10 @@ export type SmartSearchDto = {
     isEncoded?: boolean;
     /** Filter by favorite status */
     isFavorite?: boolean;
+    /** Filter by liked status: liked by any user in an album the viewer can access */
+    isLiked?: boolean;
+    /** Filter by assets liked by the viewer */
+    isLikedByMe?: boolean;
     /** Filter by motion photo status */
     isMotion?: boolean;
     /** Filter assets not in any album */
@@ -2795,6 +2811,10 @@ export type StatisticsSearchDto = {
     isEncoded?: boolean;
     /** Filter by favorite status */
     isFavorite?: boolean;
+    /** Filter by liked status: liked by any user in an album the viewer can access */
+    isLiked?: boolean;
+    /** Filter by assets liked by the viewer */
+    isLikedByMe?: boolean;
     /** Filter by motion photo status */
     isMotion?: boolean;
     /** Filter assets not in any album */
@@ -6770,7 +6790,7 @@ export function getExploreData(opts?: Oazapfts.RequestOpts) {
 /**
  * Search large assets
  */
-export function searchLargeAssets({ albumIds, city, colorLabels, country, createdAfter, createdBefore, flags, isEncoded, isFavorite, isMotion, isNotInAlbum, isOffline, lensModel, libraryId, make, minFileSize, model, ocr, personIds, rating, size, state, tagIds, takenAfter, takenBefore, trashedAfter, trashedBefore, $type, updatedAfter, updatedBefore, visibility, withDeleted, withExif }: {
+export function searchLargeAssets({ albumIds, city, colorLabels, country, createdAfter, createdBefore, flags, isEncoded, isFavorite, isLiked, isLikedByMe, isMotion, isNotInAlbum, isOffline, lensModel, libraryId, make, minFileSize, model, ocr, personIds, rating, size, state, tagIds, takenAfter, takenBefore, trashedAfter, trashedBefore, $type, updatedAfter, updatedBefore, visibility, withDeleted, withExif }: {
     albumIds?: string[];
     city?: string | null;
     colorLabels?: (AssetColorLabel | "none")[];
@@ -6780,6 +6800,8 @@ export function searchLargeAssets({ albumIds, city, colorLabels, country, create
     flags?: (AssetFlag | "none")[];
     isEncoded?: boolean;
     isFavorite?: boolean;
+    isLiked?: boolean;
+    isLikedByMe?: boolean;
     isMotion?: boolean;
     isNotInAlbum?: boolean;
     isOffline?: boolean;
@@ -6818,6 +6840,8 @@ export function searchLargeAssets({ albumIds, city, colorLabels, country, create
         flags,
         isEncoded,
         isFavorite,
+        isLiked,
+        isLikedByMe,
         isMotion,
         isNotInAlbum,
         isOffline,

@@ -154,6 +154,8 @@
     searchManager.filter.display.isArchive ||
       searchManager.filter.display.isFavorite ||
       searchManager.filter.display.isNotInAlbum ||
+      searchManager.filter.display.isLiked ||
+      searchManager.filter.display.isLikedByMe ||
       searchManager.filter.rating ||
       searchManager.filter.colorLabels.length > 0 ||
       searchManager.filter.flags.length > 0,
