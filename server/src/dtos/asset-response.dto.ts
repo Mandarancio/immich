@@ -1,6 +1,7 @@
 import { Selectable, ShallowDehydrateObject } from 'kysely';
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
+import type { UserState } from 'src/repositories/asset.repository.js';
 import type { MaybeDehydrated } from 'src/types.js';
 import { AssetFace, AssetFile, Exif, Stack, Tag, User } from 'src/database.js';
 import { HistoryBuilder } from 'src/decorators.js';
@@ -11,6 +12,7 @@ import { PersonResponseDto, PersonResponseSchema, mapPerson } from 'src/dtos/per
 import { TagResponseSchema, mapTag } from 'src/dtos/tag.dto.js';
 import { UserResponseSchema, mapUser } from 'src/dtos/user.dto.js';
 import {
+  AssetColorLabelSchema,
   AssetStatus,
   AssetType,
   AssetTypeSchema,
@@ -94,6 +96,10 @@ export const AssetResponseSchema = SanitizedAssetResponseSchema.extend(
         'The UTC timestamp when the asset record was last updated in the database. This is automatically maintained by the database and reflects when any field in the asset was last modified.',
       ),
     isFavorite: z.boolean().describe('Is favorite'),
+    colorLabel: AssetColorLabelSchema.nullable()
+      .optional()
+      .describe("The viewer's own color label")
+      .meta(new HistoryBuilder().added('v3.3.0').getExtensions()),
     isArchived: z.boolean().describe('Is archived'),
     isTrashed: z.boolean().describe('Is trashed'),
     isOffline: z.boolean().describe('Is offline'),
@@ -160,8 +166,8 @@ export type AssetMapOptions = {
   stripMetadata?: boolean;
   withStack?: boolean;
   auth?: AuthDto;
-  // favorites the viewer set on assets they do not own
-  favoriteIds?: ReadonlySet<string>;
+  // the viewer's per-user state (favorite, rating, color label) by asset id; see getViewerStates
+  viewerState?: ReadonlyMap<string, UserState>;
 };
 
 const peopleFromFaces = (faces?: MaybeDehydrated<AssetFace>[]): PersonResponseDto[] => {
@@ -211,6 +217,9 @@ export function mapAsset(entity: MaybeDehydrated<MapAsset>, options: AssetMapOpt
     return sanitizedAssetResponse as AssetResponseDto;
   }
 
+  const state = options.viewerState?.get(entity.id);
+  const isOwner = auth?.user.id === entity.ownerId;
+
   return {
     id: entity.id,
     createdAt: asDateTimeString(entity.createdAt),
@@ -226,13 +235,13 @@ export function mapAsset(entity: MaybeDehydrated<MapAsset>, options: AssetMapOpt
     fileModifiedAt: asDateTimeString(entity.fileModifiedAt),
     localDateTime: asDateTimeString(entity.localDateTime),
     updatedAt: asDateTimeString(entity.updatedAt),
-    isFavorite:
-      options.auth?.user.id === entity.ownerId ? entity.isFavorite : (options.favoriteIds?.has(entity.id) ?? false),
+    isFavorite: isOwner ? entity.isFavorite : (state?.isFavorite ?? false),
+    colorLabel: state?.colorLabel ?? null,
     isArchived: entity.visibility === AssetVisibility.Archive,
     isTrashed: !!entity.deletedAt,
     visibility: entity.visibility,
     duration: entity.duration,
-    exifInfo: entity.exifInfo ? mapExif(entity.exifInfo) : undefined,
+    exifInfo: entity.exifInfo ? mapExif(entity.exifInfo, isOwner ? null : state?.rating) : undefined,
     livePhotoVideoId: entity.livePhotoVideoId,
     tags: entity.tags?.map((tag) => mapTag(tag)),
     people: peopleFromFaces(entity.faces),

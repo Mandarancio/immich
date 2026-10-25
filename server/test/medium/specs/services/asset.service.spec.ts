@@ -1,7 +1,9 @@
 import { Kysely } from 'kysely';
+import { AssetResponseDto } from 'src/dtos/asset-response.dto.js';
 import { AssetEditAction } from 'src/dtos/editing.dto.js';
 import {
   AlbumUserRole,
+  AssetColorLabel,
   AssetFileType,
   AssetMetadataKey,
   AssetStatus,
@@ -68,6 +70,16 @@ const readState = async (ctx: ReturnType<typeof setup>['ctx'], assetId: string, 
 beforeAll(async () => {
   defaultDatabase = await getKyselyDB();
 });
+
+const shareAlbum = async (ctx: ReturnType<typeof setup>['ctx']) => {
+  const { user: owner } = await ctx.newUser();
+  const { user: member } = await ctx.newUser();
+  const { asset } = await ctx.newAsset({ ownerId: owner.id });
+  await ctx.newExif({ assetId: asset.id, rating: 2 });
+  const { album } = await ctx.newAlbum({ ownerId: owner.id }, [asset.id]);
+  await ctx.newAlbumUser({ albumId: album.id, userId: member.id, role: AlbumUserRole.Editor });
+  return { owner, member, asset };
+};
 
 describe(AssetService.name, () => {
   describe('get', () => {
@@ -1108,6 +1120,45 @@ describe(AssetService.name, () => {
         expect.objectContaining({ isEdited: true }),
       );
       await expect(ctx.get(AssetEditRepository).getAll(asset.id)).resolves.toEqual([editResponse]);
+    });
+  });
+
+  describe('viewer rating and color label', () => {
+    it('should show the rating and color a member sets without changing what the owner sees', async () => {
+      const { sut, ctx } = setupOwned();
+      const { owner, member, asset } = await shareAlbum(ctx);
+
+      await sut.update(factory.auth({ user: member }), asset.id, { rating: 5, colorLabel: AssetColorLabel.Red });
+
+      const memberView = (await sut.get(factory.auth({ user: member }), asset.id)) as AssetResponseDto;
+      expect(memberView.exifInfo?.rating).toBe(5);
+      expect(memberView.colorLabel).toBe(AssetColorLabel.Red);
+
+      const ownerView = (await sut.get(factory.auth({ user: owner }), asset.id)) as AssetResponseDto;
+      expect(ownerView.exifInfo?.rating).toBe(2);
+      expect(ownerView.colorLabel).toBeNull();
+    });
+
+    it('should fall back to the exif rating for a member without their own rating', async () => {
+      const { sut, ctx } = setupOwned();
+      const { member, asset } = await shareAlbum(ctx);
+
+      await sut.update(factory.auth({ user: member }), asset.id, { colorLabel: AssetColorLabel.Blue });
+
+      const view = (await sut.get(factory.auth({ user: member }), asset.id)) as AssetResponseDto;
+      expect(view.exifInfo?.rating).toBe(2);
+      expect(view.colorLabel).toBe(AssetColorLabel.Blue);
+    });
+
+    it('should show the color label the owner set on their own asset', async () => {
+      const { sut, ctx } = setupOwned();
+      const { owner, asset } = await shareAlbum(ctx);
+
+      await sut.update(factory.auth({ user: owner }), asset.id, { colorLabel: AssetColorLabel.Green });
+
+      const view = (await sut.get(factory.auth({ user: owner }), asset.id)) as AssetResponseDto;
+      expect(view.exifInfo?.rating).toBe(2);
+      expect(view.colorLabel).toBe(AssetColorLabel.Green);
     });
   });
 });

@@ -1,5 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 import { DateTime } from 'luxon';
+import { AssetResponseDto } from 'src/dtos/asset-response.dto.js';
 import { AssetJobName, AssetStatsResponseDto } from 'src/dtos/asset.dto.js';
 import { AssetEditAction } from 'src/dtos/editing.dto.js';
 import {
@@ -107,14 +108,31 @@ describe(AssetService.name, () => {
       expect(result).toMatchObject({ id: asset.id, isFavorite: true });
     });
 
-    it('should not look up shared favorites for owned assets', async () => {
+    it('should pass the viewer state map for owned assets so the color label is reported', async () => {
       const asset = AssetFactory.from().owner(authStub.admin.user).build();
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
       mocks.asset.getById.mockResolvedValue(getForAsset(asset));
+      mocks.asset.getUserStates.mockResolvedValue(
+        new Map([[asset.id, { isFavorite: false, rating: null, colorLabel: AssetColorLabel.Green }]]),
+      );
 
-      await sut.get(authStub.admin, asset.id);
+      const result = await sut.get(authStub.admin, asset.id);
 
-      expect(mocks.asset.getUserStates).not.toHaveBeenCalled();
+      expect(mocks.asset.getUserStates).toHaveBeenCalledWith(authStub.admin.user.id, [asset.id]);
+      expect(result).toMatchObject({ id: asset.id, colorLabel: AssetColorLabel.Green });
+    });
+
+    it('should report the viewer rating for an asset the user does not own', async () => {
+      const asset = AssetFactory.from().exif({ rating: 2 }).build();
+      mocks.access.asset.checkAlbumAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getById.mockResolvedValue(getForAsset(asset));
+      mocks.asset.getUserStates.mockResolvedValue(
+        new Map([[asset.id, { isFavorite: false, rating: 5, colorLabel: null }]]),
+      );
+
+      const result = (await sut.get(authStub.admin, asset.id)) as AssetResponseDto;
+
+      expect(result.exifInfo?.rating).toBe(5);
     });
 
     it('should allow shared link access', async () => {

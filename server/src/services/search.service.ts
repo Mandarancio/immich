@@ -26,7 +26,7 @@ import { AssetOrder, AssetVisibility, Permission } from 'src/enum.js';
 import { AssetSearchScope } from 'src/repositories/search.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { requireElevatedPermission } from 'src/utils/access.js';
-import { getMyPartnerIds, getViewerFavoriteIds } from 'src/utils/asset.util.js';
+import { getMyPartnerIds, getViewerStates } from 'src/utils/asset.util.js';
 import { isSmartSearchEnabled } from 'src/utils/misc.js';
 import { decodeSearchCursor, encodeSearchCursor } from 'src/utils/search-cursor.js';
 import { applyLockedVisibilityPolicy, collectFilterIds } from 'src/utils/search-filter.js';
@@ -382,8 +382,8 @@ export class SearchService extends BaseService {
     assets: MapAsset[],
     options: AssetMapOptions = {},
   ): Promise<AssetResponseDto[]> {
-    const favoriteIds = await getViewerFavoriteIds(this.assetRepository, auth, assets);
-    return assets.map((asset) => mapAsset(asset, { ...options, auth, favoriteIds }));
+    const viewerState = await getViewerStates(this.assetRepository, auth, assets);
+    return assets.map((asset) => mapAsset(asset, { ...options, auth, viewerState }));
   }
 
   private async mapResponse(
