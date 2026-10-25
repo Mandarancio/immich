@@ -36,7 +36,13 @@
 </script>
 
 <main class="relative h-dvh overflow-hidden px-2 pt-(--navbar-height) max-md:pt-(--navbar-height-md) md:px-6">
-  <Timeline enableRouting={true} {options} assetInteraction={assetMultiSelectManager} onEscape={handleEscape} />
+  <Timeline
+    enableRouting={true}
+    showFilterBar
+    {options}
+    assetInteraction={assetMultiSelectManager}
+    onEscape={handleEscape}
+  />
 </main>
 
 {#if assetMultiSelectManager.selectionActive}

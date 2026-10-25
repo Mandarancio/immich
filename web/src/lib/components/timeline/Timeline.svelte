@@ -4,6 +4,7 @@
   import Thumbnail from '$lib/components/assets/thumbnail/Thumbnail.svelte';
   import Month from '$lib/components/timeline/Month.svelte';
   import Scrubber from '$lib/components/timeline/Scrubber.svelte';
+  import TimelineFilterBar from '$lib/components/timeline/TimelineFilterBar.svelte';
   import TimelineAssetViewer from '$lib/components/timeline/TimelineAssetViewer.svelte';
   import TimelineKeyboardActions from '$lib/components/timeline/actions/TimelineKeyboardActions.svelte';
   import { focusAsset } from '$lib/components/timeline/actions/focus-actions';
@@ -13,6 +14,7 @@
   import Skeleton from '$lib/elements/Skeleton.svelte';
   import type { AssetMultiSelectManager } from '$lib/managers/asset-multi-select-manager.svelte';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
+  import { TimelineFilterManager } from '$lib/managers/timeline-filter-manager.svelte';
   import type { TimelineDay } from '$lib/managers/timeline-manager/timeline-day.svelte';
   import { isIntersecting } from '$lib/managers/timeline-manager/internal/intersection-support.svelte';
   import type { TimelineMonth } from '$lib/managers/timeline-manager/timeline-month.svelte';
@@ -25,7 +27,7 @@
   import { getTimes, type ScrubberListener } from '$lib/utils/timeline-util';
   import { type AlbumResponseDto, type PersonResponseDto, type UserResponseDto } from '@immich/sdk';
   import { DateTime } from 'luxon';
-  import { onDestroy, onMount, tick, type Snippet } from 'svelte';
+  import { onDestroy, onMount, tick, untrack, type Snippet } from 'svelte';
   import type { UpdatePayload } from 'vite';
 
   interface Props {
@@ -45,6 +47,8 @@
     album?: AlbumResponseDto;
     albumUsers?: UserResponseDto[];
     person?: PersonResponseDto;
+    /** show the quick filter bar (favorites, rating, color) above the timeline */
+    showFilterBar?: boolean;
     onSelect?: (asset: TimelineAsset) => void;
     onEscape?: () => void;
     children?: Snippet;
@@ -77,6 +81,7 @@
     album,
     albumUsers = [],
     person,
+    showFilterBar = false,
     onSelect = () => {},
     onEscape = () => {},
     children,
@@ -87,7 +92,22 @@
 
   timelineManager = new TimelineManager();
   onDestroy(() => timelineManager.destroy());
+
+  const filter = new TimelineFilterManager();
+  // the filter belongs to one timeline context: reset it when the options change in place (e.g. album or person id)
+  const optionsKey = $derived(JSON.stringify(options ?? null));
+  $effect(() => {
+    void optionsKey;
+    untrack(() => filter.clear());
+  });
+  $effect(() => {
+    // a bar that is not shown must not filter
+    const query = showFilterBar ? filter.query : {};
+    void timelineManager.setFilter(query);
+  });
   $effect(() => options && void timelineManager.updateOptions(options));
+  const hideFavoriteFilter = $derived(options?.isFavorite !== undefined);
+  let filterBarHeight = $state(0);
 
   let scrollableElement: HTMLElement | undefined = $state();
   let timelineElement: HTMLElement | undefined = $state();
@@ -576,6 +596,13 @@
   {onEscape}
 />
 
+{#if showFilterBar}
+  <!-- Rendered in flow before the scrubber so the (absolutely positioned) scrubber starts below the bar -->
+  <div bind:clientHeight={filterBarHeight}>
+    <TimelineFilterBar {filter} hideFavorite={hideFavoriteFilter} />
+  </div>
+{/if}
+
 {#if timelineManager.months.length > 0}
   <Scrubber
     {timelineManager}
@@ -607,6 +634,7 @@
   id="asset-grid"
   class={['h-full scrollbar-hidden overflow-y-auto outline-none', { 'm-0': isEmpty }, { 'ms-0': !isEmpty }]}
   style:margin-inline-end={(usingMobileDevice ? 0 : scrubberWidth) + 'px'}
+  style:height={showFilterBar ? `calc(100% - ${filterBarHeight}px)` : undefined}
   tabindex="-1"
   bind:clientHeight={timelineManager.viewportHeight}
   bind:clientWidth={timelineManager.viewportWidth}
