@@ -9,7 +9,7 @@ Builds on the shared-favorites work (`2026-10-25-shared-favorites-and-album-sear
 
 - Ratings and color labels are **private to each user**, like favorites. No sharing of labels across users.
 - Rating storage follows the favorites model:
-  - For **owned** assets `asset_exif.rating` stays authoritative (XMP sidecar, Android app, sync streams and the existing search filter keep working). The per-user table mirrors it and is never read for owned assets.
+  - For **owned** assets `asset_exif.rating` stays authoritative (XMP sidecar, Android app, sync streams and the existing search filter keep working). The per-user table's `rating` is never written or read for owned assets.
   - For **non-owned** assets (shared-album members including viewers, partners) the rating lives in the per-user table. "Inherit from exif" means a non-owner sees the exif rating until they set their own, and clearing theirs falls back to the exif rating.
 - Color labels have no legacy field, so they live only in the per-user table, for owners and non-owners alike.
 - Color set: `red`, `yellow`, `green`, `blue`, `purple` (Lightroom/darktable), at most one label per asset per user.
@@ -33,7 +33,7 @@ Existing columns: `userId` (PK, FK user, cascade), `assetId` (PK, FK asset, casc
 
 - `colorLabel` is a text column with a CHECK constraint (easier to extend than a Postgres enum), exposed as an `AssetColorLabel` enum in the DTOs.
 - A row exists only while it holds at least one of favorite, rating or color. Clearing the last one deletes the row.
-- Owner rows: the migration also backfills `rating` from `asset_exif.rating` for owned assets that already have a row. The mirror is never read for owned assets.
+- Owner rows exist only for favorite (the existing mirror) or color. The `rating` column is only written for non-owned assets; the owner's rating lives in `asset_exif.rating`.
 - `down` reverses the rename and drops the new columns.
 - Code rename: `asset-favorite.table.ts` becomes `asset-user-state.table.ts`; `getFavoriteIds` / `addFavorites` / `removeFavorites` become state-aware, and every favorites query gains `WHERE isFavorite`.
 - `sync.repository.ts` and sync DTOs are not changed.
@@ -56,11 +56,12 @@ Per id, per field:
 | field      | owner                                                                                      | non-owner                                                   |
 | ---------- | ------------------------------------------------------------------------------------------ | ----------------------------------------------------------- |
 | isFavorite | column update and events, then mirrored to the table (as today)                            | table `isFavorite`                                          |
-| rating     | `asset_exif.rating` update with XMP sidecar write and events (as today), then mirrored     | table `rating`; `null` clears it so the exif rating returns |
+| rating     | `asset_exif.rating` update with XMP sidecar write and events (as today); table untouched   | table `rating` (1-5); `null` clears it so the exif rating returns; `-1` (reject) is rejected with a 400 |
 | colorLabel | table only                                                                                 | table only                                                  |
 
 - Table writes are one upsert per request touching only the fields present in the DTO; absent fields are left alone.
 - After the upsert, rows with `isFavorite = false`, `rating IS NULL` and `colorLabel IS NULL` are deleted.
+- A request that carries `colorLabel` alongside other owner-only fields also writes the color to the table.
 - Non-owner writes and color-only writes touch no asset row, no `updatedAt` and no event, so sync is unaffected.
 - The `ratings.enabled` preference gates only the web UI; the server does not check it.
 
@@ -101,6 +102,7 @@ Shared quick-filter bar in the timeline header, on every timeline view (main tim
 
 - Favorites: heart toggle.
 - Rating: minimum-star selector (1-5, click again to clear) plus an "unrated" toggle.
+- The favorites toggle is hidden on views that already fix `isFavorite` (the Favorites page). The server accepts the favorite, rating and color filters on partner and other-user timelines too, since they are viewer-aware (the old 400 for `isFavorite` on other users' timelines is removed).
 - Color: five color chips (multi-select, any-of) plus a "no color" chip.
 - State lives in a `TimelineManager` filter and is passed to the bucket queries as `isFavorite`, `rating`, `unrated` and `colorLabels`. It resets when navigating to a different view.
 - An active-filter indicator with a clear-all button shows when any control is on.
@@ -116,8 +118,8 @@ Search page: `SearchRatingsSection` and the favorites toggle already exist. Add 
 
 ## Tests
 
-- Server unit (`asset.service.spec.ts`): non-owner rating and color via album and partner; color-only write; owner rating mirror; clearing the last state deletes the row; no access rejected; shared-link rejected; non-owner cannot update other fields.
-- Medium (real DB): effective-rating and color filters for owner, album member and partner in timeline buckets and search; stale owner mirror ignored; the migration rename, `isFavorite` set on existing rows, rating backfill, and `down`/`up` round trip.
+- Server unit (`asset.service.spec.ts`): non-owner rating and color via album and partner; color-only write by owner and non-owner (no asset update, no event); owner rating goes to exif only; non-owner `-1` rejected; clearing the last state deletes the row; no access rejected; shared-link rejected; non-owner cannot update other fields.
+- Medium (real DB): effective-rating and color filters for owner, album member and partner in timeline buckets and search; stale owner mirror ignored; the migration rename, `isFavorite` set on existing rows, and `down`/`up` round trip.
 - E2E: an album member rates and labels a shared photo and filters by both; the owner's exif rating is unchanged.
 - Web unit: filter bar, picker visibility and gating, shortcut handlers.
 
