@@ -348,6 +348,7 @@
     <Timeline
       enableRouting={true}
       {person}
+      showFilterBar
       bind:timelineManager
       {options}
       assetInteraction={assetMultiSelectManager}

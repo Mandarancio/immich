@@ -49,6 +49,7 @@
 <UserPageLayout hideNavbar={assetMultiSelectManager.selectionActive} title={data.meta.title} scrollbar={false}>
   <Timeline
     enableRouting={true}
+    showFilterBar
     withStacked={true}
     bind:timelineManager
     {options}

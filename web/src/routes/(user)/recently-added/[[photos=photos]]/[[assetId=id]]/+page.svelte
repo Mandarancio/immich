@@ -83,6 +83,7 @@
 <UserPageLayout hideNavbar={assetMultiSelectManager.selectionActive} title={data.meta.title} scrollbar={false}>
   <Timeline
     enableRouting={true}
+    showFilterBar
     bind:timelineManager
     {options}
     assetInteraction={assetMultiSelectManager}

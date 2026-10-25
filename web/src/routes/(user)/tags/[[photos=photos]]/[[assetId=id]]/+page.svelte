@@ -102,6 +102,7 @@
       <Timeline
         enableRouting={true}
         bind:timelineManager
+        showFilterBar
         {options}
         assetInteraction={assetMultiSelectManager}
         removeAction={AssetAction.UNARCHIVE}
