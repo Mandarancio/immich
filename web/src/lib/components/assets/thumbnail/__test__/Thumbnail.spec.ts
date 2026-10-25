@@ -1,4 +1,4 @@
-import { AssetColorLabel } from '@immich/sdk';
+import { AssetColorLabel, AssetVisibility } from '@immich/sdk';
 import { render } from '@testing-library/svelte';
 import { getIntersectionObserverMock } from '$lib/__mocks__/intersection-observer.mock';
 import Thumbnail from '$lib/components/assets/thumbnail/Thumbnail.svelte';
@@ -110,6 +110,67 @@ describe('Thumbnail component', () => {
 
       const rejected = render(Thumbnail, { asset: timelineAssetFactory.build({ rating: -1 }) });
       expect(rejected.queryByTestId('thumbnail-rating')).toBeNull();
+    });
+
+    it('hides the color dot on a shared link', () => {
+      const sharedLinkSpy = vi.spyOn(authManager, 'isSharedLink', 'get').mockReturnValue(true);
+      try {
+        const asset = timelineAssetFactory.build({ colorLabel: AssetColorLabel.Red, rating: 4 });
+        const { queryByTestId } = render(Thumbnail, { asset });
+
+        expect(queryByTestId('thumbnail-color-label')).toBeNull();
+        expect(queryByTestId('thumbnail-rating')).toBeNull();
+      } finally {
+        sharedLinkSpy.mockRestore();
+      }
+    });
+
+    describe('bottom-left overlay stacking', () => {
+      const bottomClass = (element: Element | null | undefined) =>
+        [...(element?.classList ?? [])].find((name) => name.startsWith('bottom-'));
+
+      it('stacks the archive icon above the color dot for an archived, non-favorite asset', () => {
+        const asset = timelineAssetFactory.build({
+          colorLabel: AssetColorLabel.Blue,
+          isFavorite: false,
+          visibility: AssetVisibility.Archive,
+        });
+        const { baseElement, getByTestId } = render(Thumbnail, { asset, showArchiveIcon: true });
+
+        const row = getByTestId('thumbnail-state-row');
+        const archive = baseElement.querySelector('[data-icon-archive]')?.parentElement;
+        expect(archive).toBeTruthy();
+        expect(bottomClass(row)).toBe('bottom-2');
+        expect(bottomClass(archive)).toBe('bottom-10');
+      });
+
+      it('gives heart, color row and archive icon distinct offsets when all are present', () => {
+        const asset = timelineAssetFactory.build({
+          colorLabel: AssetColorLabel.Green,
+          isFavorite: true,
+          visibility: AssetVisibility.Archive,
+        });
+        const { baseElement, getByTestId } = render(Thumbnail, { asset, showArchiveIcon: true });
+
+        const heart = baseElement.querySelector('[data-icon-favorite]')?.parentElement;
+        const row = getByTestId('thumbnail-state-row');
+        const archive = baseElement.querySelector('[data-icon-archive]')?.parentElement;
+        const offsets = [bottomClass(heart), bottomClass(row), bottomClass(archive)];
+        expect(offsets).toEqual(['bottom-2', 'bottom-10', 'bottom-18']);
+        expect(new Set(offsets).size).toBe(3);
+      });
+
+      it('keeps the archive icon at the bottom when there is nothing else to stack', () => {
+        const asset = timelineAssetFactory.build({
+          colorLabel: null,
+          rating: null,
+          isFavorite: false,
+          visibility: AssetVisibility.Archive,
+        });
+        const { baseElement } = render(Thumbnail, { asset, showArchiveIcon: true });
+
+        expect(bottomClass(baseElement.querySelector('[data-icon-archive]')?.parentElement)).toBe('bottom-2');
+      });
     });
   });
 });

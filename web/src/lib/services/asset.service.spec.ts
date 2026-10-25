@@ -109,6 +109,17 @@ describe('AssetService', () => {
         expect(getAssetActions(() => '', asset).Rate.$if?.()).toStrictEqual(false);
       });
 
+      it('should not offer rating on a shared link route even to the logged-in owner', () => {
+        authManager.setUser(userAdminFactory.build({ id: 'owner' }));
+        const asset = assetFactory.build({ ownerId: 'owner' });
+        const spy = vitest.spyOn(authManager, 'isSharedLink', 'get').mockReturnValue(true);
+        try {
+          expect(getAssetActions(() => '', asset).Rate.$if?.()).toStrictEqual(false);
+        } finally {
+          spy.mockRestore();
+        }
+      });
+
       it('should not offer rating when ratings are disabled', () => {
         authManager.setPreferences(preferencesFactory.build({ ratings: { enabled: false } }));
         authManager.setUser(userAdminFactory.build({ id: 'viewer' }));
@@ -192,6 +203,19 @@ describe('AssetService', () => {
 
       expect(updateAsset).not.toHaveBeenCalled();
     });
+
+    it('should never write on a shared link, even for a logged-in owner', async () => {
+      authManager.setUser(userAdminFactory.build({ id: 'owner' }));
+      const asset = assetFactory.build({ ownerId: 'owner', exifInfo: { rating: null } });
+      const spy = vitest.spyOn(authManager, 'isSharedLink', 'get').mockReturnValue(true);
+      try {
+        await handleRate(asset, 3);
+      } finally {
+        spy.mockRestore();
+      }
+
+      expect(updateAsset).not.toHaveBeenCalled();
+    });
   });
 
   describe('handleSetColorLabel', () => {
@@ -219,6 +243,19 @@ describe('AssetService', () => {
       await handleSetColorLabel(asset, null);
 
       expect(updateAsset).toHaveBeenCalledWith({ id: asset.id, updateAssetDto: { colorLabel: null } });
+    });
+
+    it('should never write on a shared link, even for a logged-in owner', async () => {
+      authManager.setUser(userAdminFactory.build({ id: 'owner' }));
+      const asset = assetFactory.build({ ownerId: 'owner' });
+      const spy = vitest.spyOn(authManager, 'isSharedLink', 'get').mockReturnValue(true);
+      try {
+        await handleSetColorLabel(asset, AssetColorLabel.Green);
+      } finally {
+        spy.mockRestore();
+      }
+
+      expect(updateAsset).not.toHaveBeenCalled();
     });
 
     it('should not emit when the update fails', async () => {

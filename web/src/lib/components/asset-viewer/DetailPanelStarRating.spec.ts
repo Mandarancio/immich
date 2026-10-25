@@ -21,10 +21,17 @@ describe('DetailPanelStarRating', () => {
   });
 
   it('is editable for a non-owner', async () => {
-    const asset = assetFactory.build({ ownerId: 'someone-else', exifInfo: { rating: null } });
-    vi.mocked(updateAsset).mockResolvedValue(asset);
+    const asset = assetFactory.build({ ownerId: 'someone-else', isFavorite: false, exifInfo: { rating: null } });
+    // distinct from the rendered prop so the test proves the server response (not the stale prop) is emitted
+    const response = assetFactory.build({
+      id: asset.id,
+      ownerId: 'someone-else',
+      isFavorite: true,
+      exifInfo: { rating: 3 },
+    });
+    vi.mocked(updateAsset).mockResolvedValue(response);
     const emit = vi.spyOn(eventManager, 'emit');
-    render(DetailPanelStarRating, { asset, isOwner: false });
+    render(DetailPanelStarRating, { asset });
 
     const inputs = screen.getAllByRole('radio');
     expect(inputs).toHaveLength(5);
@@ -35,12 +42,23 @@ describe('DetailPanelStarRating', () => {
     await fireEvent.click(inputs[2]);
 
     await waitFor(() => expect(updateAsset).toHaveBeenCalledWith({ id: asset.id, updateAssetDto: { rating: 3 } }));
-    await waitFor(() => expect(emit).toHaveBeenCalledWith('AssetUpdate', asset));
+    await waitFor(() => expect(emit).toHaveBeenCalledWith('AssetUpdate', response));
+    expect(emit).not.toHaveBeenCalledWith('AssetUpdate', asset);
+  });
+
+  it('clears the rating by sending null', async () => {
+    const asset = assetFactory.build({ ownerId: 'someone-else', exifInfo: { rating: 4 } });
+    vi.mocked(updateAsset).mockResolvedValue(asset);
+    render(DetailPanelStarRating, { asset });
+
+    await fireEvent.click(screen.getByRole('button'));
+
+    await waitFor(() => expect(updateAsset).toHaveBeenCalledWith({ id: asset.id, updateAssetDto: { rating: null } }));
   });
 
   it('is editable for the owner', () => {
     const asset = assetFactory.build({ ownerId: 'viewer', exifInfo: { rating: 2 } });
-    render(DetailPanelStarRating, { asset, isOwner: true });
+    render(DetailPanelStarRating, { asset });
 
     for (const input of screen.getAllByRole('radio')) {
       expect((input as HTMLInputElement).disabled).toBe(false);
@@ -50,7 +68,7 @@ describe('DetailPanelStarRating', () => {
   it('is hidden on a shared link', () => {
     vi.spyOn(authManager, 'isSharedLink', 'get').mockReturnValue(true);
     const asset = assetFactory.build({ ownerId: 'someone-else', exifInfo: { rating: 4 } });
-    render(DetailPanelStarRating, { asset, isOwner: false });
+    render(DetailPanelStarRating, { asset });
 
     expect(screen.queryAllByRole('radio')).toHaveLength(0);
   });
@@ -58,7 +76,7 @@ describe('DetailPanelStarRating', () => {
   it('is hidden when ratings are disabled', () => {
     authManager.setPreferences(preferencesFactory.build({ ratings: { enabled: false } }));
     const asset = assetFactory.build({ ownerId: 'viewer' });
-    render(DetailPanelStarRating, { asset, isOwner: true });
+    render(DetailPanelStarRating, { asset });
 
     expect(screen.queryAllByRole('radio')).toHaveLength(0);
   });

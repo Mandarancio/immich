@@ -91,6 +91,17 @@
       authManager.preferences.ratings.enabled &&
       (asset.rating ?? 0) > 0,
   );
+  let showFavoriteIcon = $derived(!authManager.isSharedLink && !!asset.isFavorite);
+  let showColorDot = $derived(!authManager.isSharedLink && !!asset.colorLabel);
+  let showStateRow = $derived(showColorDot || showRatingBadge);
+  let showArchive = $derived(
+    !authManager.isSharedLink && showArchiveIcon && asset.visibility === AssetVisibility.Archive,
+  );
+  // bottom-left overlays stack upwards (24px icons, 8px gap) in a stable order:
+  // favorite heart, color dot / rating badge row, archive icon. Only the present ones take a slot.
+  const bottomSlots = ['bottom-2', 'bottom-10', 'bottom-18'];
+  let stateRowBottom = $derived(bottomSlots[Number(showFavoriteIcon)]);
+  let archiveBottom = $derived(bottomSlots[Number(showFavoriteIcon) + Number(showStateRow)]);
   let assetOwner = $derived(albumUsers?.find((user) => user.id === asset.ownerId) ?? null);
 
   const onIconClickedHandler = (e?: MouseEvent) => {
@@ -328,21 +339,19 @@
         {/if}
 
         <!-- Favorite asset star -->
-        {#if !authManager.isSharedLink && asset.isFavorite}
-          <div class="absolute inset-s-2 bottom-2 z-2">
+        {#if showFavoriteIcon}
+          <div class={['absolute inset-s-2 z-2', bottomSlots[0]]}>
             <Icon data-icon-favorite icon={mdiHeart} size="24" class="text-white" />
           </div>
         {/if}
 
-        <!-- Per-user color label dot and rating badge, next to the favorite heart -->
-        {#if asset.colorLabel || showRatingBadge}
+        <!-- Per-user color label dot and rating badge, stacked above the favorite heart -->
+        {#if showStateRow}
           <div
-            class={[
-              'absolute bottom-2 z-2 flex h-6 items-center gap-1',
-              !authManager.isSharedLink && asset.isFavorite ? 'inset-s-9' : 'inset-s-2',
-            ]}
+            class={['absolute inset-s-2 z-2 flex h-6 items-center gap-1', stateRowBottom]}
+            data-testid="thumbnail-state-row"
           >
-            {#if asset.colorLabel}
+            {#if showColorDot && asset.colorLabel}
               <span
                 data-testid="thumbnail-color-label"
                 role="img"
@@ -372,8 +381,8 @@
           </div>
         {/if}
 
-        {#if !authManager.isSharedLink && showArchiveIcon && asset.visibility === AssetVisibility.Archive}
-          <div class={['absolute inset-s-2 z-2', asset.isFavorite ? 'bottom-10' : 'bottom-2']}>
+        {#if showArchive}
+          <div class={['absolute inset-s-2 z-2', archiveBottom]}>
             <Icon data-icon-archive icon={mdiArchiveArrowDownOutline} size="24" class="text-white" />
           </div>
         {/if}
