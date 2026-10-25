@@ -1,11 +1,17 @@
-import { AssetColorLabel, getAssetInfo, updateAsset, type UserConfigDto } from '@immich/sdk';
+import { AssetColorLabel, AssetFlag, getAssetInfo, updateAsset, type UserConfigDto } from '@immich/sdk';
 import { toastManager } from '@immich/ui';
 import { vitest } from 'vitest';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 import { queryClient } from '$lib/queries/client';
 import { getUserConfigQuery } from '$lib/queries/config-user.query';
-import { getAssetActions, handleDownloadAsset, handleRate, handleSetColorLabel } from '$lib/services/asset.service';
+import {
+  getAssetActions,
+  handleDownloadAsset,
+  handleRate,
+  handleSetColorLabel,
+  handleSetFlag,
+} from '$lib/services/asset.service';
 import { setSharedLink } from '$lib/utils';
 import { getFormatter } from '$lib/utils/i18n';
 import { assetFactory } from '@test-data/factories/asset-factory';
@@ -171,6 +177,63 @@ describe('AssetService', () => {
       });
     });
 
+    describe('SetFlag', () => {
+      beforeEach(() => {
+        vitest.mocked(getFormatter).mockResolvedValue(vitest.fn().mockReturnValue('formatter'));
+        vitest.mocked(updateAsset).mockReset();
+        authManager.setUser(userAdminFactory.build({ id: 'viewer' }));
+      });
+
+      const press = (key: string) => ({ event: new KeyboardEvent('keydown', { key }) }) as never;
+
+      it('should bind k, r and u and be offered to a logged-in user', () => {
+        const asset = assetFactory.build({ ownerId: 'someone-else' });
+        const { SetFlag } = getAssetActions(() => '', asset);
+        expect(SetFlag.$if?.()).toStrictEqual(true);
+        expect([SetFlag.shortcuts].flat().map((shortcut) => shortcut?.key)).toEqual(['k', 'r', 'u']);
+      });
+
+      it('should not depend on the ratings preference', () => {
+        authManager.setPreferences(preferencesFactory.build({ ratings: { enabled: false } }));
+        const asset = assetFactory.build({ ownerId: 'someone-else' });
+        expect(getAssetActions(() => '', asset).SetFlag.$if?.()).toStrictEqual(true);
+      });
+
+      it('should pick on k', async () => {
+        const asset = assetFactory.build();
+        vitest.mocked(updateAsset).mockResolvedValue(asset);
+        await getAssetActions(() => '', asset).SetFlag.onAction(press('k'));
+        expect(updateAsset).toHaveBeenCalledWith({ id: asset.id, updateAssetDto: { flag: AssetFlag.Pick } });
+      });
+
+      it('should reject on r', async () => {
+        const asset = assetFactory.build();
+        vitest.mocked(updateAsset).mockResolvedValue(asset);
+        await getAssetActions(() => '', asset).SetFlag.onAction(press('r'));
+        expect(updateAsset).toHaveBeenCalledWith({ id: asset.id, updateAssetDto: { flag: AssetFlag.Reject } });
+      });
+
+      it('should clear the flag when the asset already has it', async () => {
+        const asset = assetFactory.build({ flag: AssetFlag.Pick } as never);
+        vitest.mocked(updateAsset).mockResolvedValue(asset);
+        await getAssetActions(() => '', asset).SetFlag.onAction(press('k'));
+        expect(updateAsset).toHaveBeenCalledWith({ id: asset.id, updateAssetDto: { flag: null } });
+      });
+
+      it('should clear on u', async () => {
+        const asset = assetFactory.build({ flag: AssetFlag.Reject } as never);
+        vitest.mocked(updateAsset).mockResolvedValue(asset);
+        await getAssetActions(() => '', asset).SetFlag.onAction(press('u'));
+        expect(updateAsset).toHaveBeenCalledWith({ id: asset.id, updateAssetDto: { flag: null } });
+      });
+
+      it('should not be offered on a shared link', () => {
+        setSharedLink(sharedLinkFactory.build());
+        const asset = assetFactory.build({ ownerId: 'someone-else' });
+        expect(getAssetActions(() => '', asset).SetFlag.$if?.()).toStrictEqual(false);
+      });
+    });
+
     it('should not allow shared link downloads if the user does not own the asset and shared link downloads are disabled', () => {
       const ownerId = 'owner';
       const user = userAdminFactory.build({ id: 'non-owner' });
@@ -308,6 +371,58 @@ describe('AssetService', () => {
       emit.mockClear();
 
       await handleSetColorLabel(asset, AssetColorLabel.Red);
+
+      expect(emit).not.toHaveBeenCalledWith('AssetUpdate', expect.anything());
+    });
+  });
+
+  describe('handleSetFlag', () => {
+    beforeEach(() => {
+      vitest.mocked(getFormatter).mockResolvedValue(vitest.fn().mockReturnValue('formatter'));
+      vitest.mocked(updateAsset).mockReset();
+    });
+
+    it('should send the flag and emit the update with the response', async () => {
+      const asset = assetFactory.build();
+      const updated = { ...asset, flag: AssetFlag.Pick };
+      vitest.mocked(updateAsset).mockResolvedValue(updated as never);
+      const emit = vitest.spyOn(eventManager, 'emit');
+
+      await handleSetFlag(asset, AssetFlag.Pick);
+
+      expect(updateAsset).toHaveBeenCalledWith({ id: asset.id, updateAssetDto: { flag: AssetFlag.Pick } });
+      expect(emit).toHaveBeenCalledWith('AssetUpdate', updated);
+    });
+
+    it('should clear the flag with null', async () => {
+      const asset = assetFactory.build();
+      vitest.mocked(updateAsset).mockResolvedValue(asset);
+
+      await handleSetFlag(asset, null);
+
+      expect(updateAsset).toHaveBeenCalledWith({ id: asset.id, updateAssetDto: { flag: null } });
+    });
+
+    it('should never write on a shared link, even for a logged-in owner', async () => {
+      authManager.setUser(userAdminFactory.build({ id: 'owner' }));
+      const asset = assetFactory.build({ ownerId: 'owner' });
+      const spy = vitest.spyOn(authManager, 'isSharedLink', 'get').mockReturnValue(true);
+      try {
+        await handleSetFlag(asset, AssetFlag.Reject);
+      } finally {
+        spy.mockRestore();
+      }
+
+      expect(updateAsset).not.toHaveBeenCalled();
+    });
+
+    it('should not emit when the update fails', async () => {
+      const asset = assetFactory.build();
+      vitest.mocked(updateAsset).mockRejectedValue(new Error('nope'));
+      const emit = vitest.spyOn(eventManager, 'emit');
+      emit.mockClear();
+
+      await handleSetFlag(asset, AssetFlag.Reject);
 
       expect(emit).not.toHaveBeenCalledWith('AssetUpdate', expect.anything());
     });

@@ -141,6 +141,7 @@
           getAssets: () => assetInteraction.assets,
           onRated: (ids, rating) => timelineManager.update(ids, (asset) => (asset.rating = rating)),
           onLabeled: (ids, label) => timelineManager.update(ids, (asset) => (asset.colorLabel = label)),
+          onFlagged: (ids, flag) => timelineManager.update(ids, (asset) => (asset.flag = flag)),
           onDone: () => assetInteraction.clear(),
         }),
       );

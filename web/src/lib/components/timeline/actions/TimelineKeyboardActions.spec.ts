@@ -1,4 +1,4 @@
-import { AssetColorLabel, updateAssets } from '@immich/sdk';
+import { AssetColorLabel, AssetFlag, updateAssets } from '@immich/sdk';
 import { fireEvent, render } from '@testing-library/svelte';
 import TimelineKeyboardActions from '$lib/components/timeline/actions/TimelineKeyboardActions.svelte';
 import { AssetMultiSelectManager } from '$lib/managers/asset-multi-select-manager.svelte';
@@ -60,6 +60,31 @@ describe('TimelineKeyboardActions rating and color shortcuts', () => {
     );
   });
 
+  it('picks the selection with k and updates the timeline', async () => {
+    const timelineManager = new TimelineManager();
+    const update = vi
+      .spyOn(timelineManager, 'update')
+      .mockReturnValue({ updated: new Set(), notUpdated: new Set(), changedGeometry: false });
+    render(TimelineKeyboardActions, {
+      timelineManager,
+      assetInteraction: selection,
+      scrollToAsset: () => false,
+    });
+    await fireEvent.keyDown(document.body, { key: 'k' });
+
+    await vi.waitFor(() =>
+      expect(updateAssets).toHaveBeenCalledWith({
+        assetBulkUpdateDto: { ids: [first.id, second.id], flag: AssetFlag.Pick },
+      }),
+    );
+    await vi.waitFor(() => expect(update).toHaveBeenCalledWith([first.id, second.id], expect.any(Function)));
+
+    const asset = timelineAssetFactory.build({ flag: null });
+    update.mock.calls[0][1](asset);
+    expect(asset.flag).toBe(AssetFlag.Pick);
+    await vi.waitFor(() => expect(selection.selectionActive).toBe(false));
+  });
+
   it('does nothing without a selection', async () => {
     selection.clear();
     renderActions();
@@ -81,6 +106,7 @@ describe('TimelineKeyboardActions rating and color shortcuts', () => {
     renderActions();
     await fireEvent.keyDown(document.body, { key: '3' });
     await fireEvent.keyDown(document.body, { key: '6' });
+    await fireEvent.keyDown(document.body, { key: 'k' });
 
     expect(updateAssets).not.toHaveBeenCalled();
   });
