@@ -1,8 +1,8 @@
-import { AssetColorLabel, updateAssets } from '@immich/sdk';
+import { AssetColorLabel, AssetFlag, updateAssets } from '@immich/sdk';
 import { fireEvent } from '@testing-library/svelte';
 import { shortcuts } from '$lib/actions/shortcut';
 import { authManager } from '$lib/managers/auth-manager.svelte';
-import { getBulkUserStateShortcuts, nextColorLabel } from '$lib/services/asset.service';
+import { getBulkUserStateShortcuts, handleBulkSetFlag, nextColorLabel } from '$lib/services/asset.service';
 import { timelineAssetFactory } from '@test-data/factories/asset-factory';
 import { preferencesFactory } from '@test-data/factories/preferences-factory';
 import { userAdminFactory } from '@test-data/factories/user-factory';
@@ -175,5 +175,169 @@ describe('getBulkUserStateShortcuts', () => {
     await press('6');
 
     expect(updateAssets).not.toHaveBeenCalled();
+  });
+});
+
+describe('handleBulkSetFlag', () => {
+  const first = timelineAssetFactory.build({ flag: null });
+  const second = timelineAssetFactory.build({ flag: AssetFlag.Reject });
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    vi.mocked(updateAssets).mockReset();
+    vi.mocked(updateAssets).mockResolvedValue(undefined as never);
+    authManager.setUser(userAdminFactory.build({ id: 'viewer' }));
+    first.flag = null;
+    second.flag = AssetFlag.Reject;
+  });
+
+  it('sends the flag, applies it locally after success and reports the ids', async () => {
+    const onFlagged = vi.fn();
+    const ids = await handleBulkSetFlag([first, second], AssetFlag.Pick, onFlagged);
+
+    expect(updateAssets).toHaveBeenCalledWith({
+      assetBulkUpdateDto: { ids: [first.id, second.id], flag: AssetFlag.Pick },
+    });
+    expect(ids).toEqual([first.id, second.id]);
+    expect(first.flag).toBe(AssetFlag.Pick);
+    expect(second.flag).toBe(AssetFlag.Pick);
+    expect(onFlagged).toHaveBeenCalledWith([first.id, second.id], AssetFlag.Pick);
+  });
+
+  it('clears the flag with null', async () => {
+    await handleBulkSetFlag([first, second], null);
+
+    expect(updateAssets).toHaveBeenCalledWith({ assetBulkUpdateDto: { ids: [first.id, second.id], flag: null } });
+    expect(second.flag).toBeNull();
+  });
+
+  it('leaves local state alone and returns undefined on failure', async () => {
+    vi.mocked(updateAssets).mockRejectedValue(new Error('nope'));
+    const onFlagged = vi.fn();
+
+    expect(await handleBulkSetFlag([first, second], AssetFlag.Pick, onFlagged)).toBeUndefined();
+    expect(first.flag).toBeNull();
+    expect(second.flag).toBe(AssetFlag.Reject);
+    expect(onFlagged).not.toHaveBeenCalled();
+  });
+
+  it('never writes on a shared link', async () => {
+    vi.spyOn(authManager, 'isSharedLink', 'get').mockReturnValue(true);
+
+    expect(await handleBulkSetFlag([first], AssetFlag.Pick)).toBeUndefined();
+    expect(updateAssets).not.toHaveBeenCalled();
+  });
+});
+
+describe('getBulkUserStateShortcuts flags', () => {
+  const first = timelineAssetFactory.build({ flag: null });
+  const second = timelineAssetFactory.build({ flag: null });
+  let node: HTMLElement;
+  let destroy: (() => void) | undefined;
+  const onFlagged = vi.fn();
+  const onDone = vi.fn();
+
+  const bind = () => {
+    destroy?.();
+    const action = shortcuts(node, getBulkUserStateShortcuts({ getAssets: () => [first, second], onFlagged, onDone }));
+    destroy = () => action?.destroy?.();
+  };
+
+  const press = async (key: string, init: KeyboardEventInit = {}) => {
+    await fireEvent.keyDown(node, { key, ...init });
+  };
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    vi.mocked(updateAssets).mockReset();
+    vi.mocked(updateAssets).mockResolvedValue(undefined as never);
+    onFlagged.mockReset();
+    onDone.mockReset();
+    authManager.setUser(userAdminFactory.build({ id: 'viewer' }));
+    authManager.setPreferences(preferencesFactory.build({ ratings: { enabled: true } }));
+    first.flag = null;
+    second.flag = null;
+    node = document.createElement('div');
+    document.body.append(node);
+  });
+
+  afterEach(() => {
+    destroy?.();
+    destroy = undefined;
+    node.remove();
+  });
+
+  it('picks with k when not every target is picked', async () => {
+    second.flag = AssetFlag.Pick;
+    bind();
+    await press('k');
+
+    await vi.waitFor(() =>
+      expect(updateAssets).toHaveBeenCalledWith({
+        assetBulkUpdateDto: { ids: [first.id, second.id], flag: AssetFlag.Pick },
+      }),
+    );
+    await vi.waitFor(() => expect(onFlagged).toHaveBeenCalledWith([first.id, second.id], AssetFlag.Pick));
+    expect(onDone).toHaveBeenCalled();
+  });
+
+  it('clears the pick with k when every target is already picked', async () => {
+    first.flag = AssetFlag.Pick;
+    second.flag = AssetFlag.Pick;
+    bind();
+    await press('k');
+
+    await vi.waitFor(() =>
+      expect(updateAssets).toHaveBeenCalledWith({ assetBulkUpdateDto: { ids: [first.id, second.id], flag: null } }),
+    );
+  });
+
+  it('rejects with r and toggles it off', async () => {
+    bind();
+    await press('r');
+    await vi.waitFor(() =>
+      expect(updateAssets).toHaveBeenCalledWith({
+        assetBulkUpdateDto: { ids: [first.id, second.id], flag: AssetFlag.Reject },
+      }),
+    );
+    await vi.waitFor(() => expect(first.flag).toBe(AssetFlag.Reject));
+
+    await press('r');
+    await vi.waitFor(() =>
+      expect(updateAssets).toHaveBeenLastCalledWith({ assetBulkUpdateDto: { ids: [first.id, second.id], flag: null } }),
+    );
+  });
+
+  it('clears with u', async () => {
+    first.flag = AssetFlag.Reject;
+    bind();
+    await press('u');
+
+    await vi.waitFor(() =>
+      expect(updateAssets).toHaveBeenCalledWith({ assetBulkUpdateDto: { ids: [first.id, second.id], flag: null } }),
+    );
+    expect(onDone).toHaveBeenCalled();
+  });
+
+  it('is not gated by the ratings preference', async () => {
+    authManager.setPreferences(preferencesFactory.build({ ratings: { enabled: false } }));
+    bind();
+    await press('k');
+
+    await vi.waitFor(() => expect(updateAssets).toHaveBeenCalledTimes(1));
+  });
+
+  it('ignores events with modifiers', async () => {
+    bind();
+    await press('k', { ctrlKey: true });
+    await press('r', { metaKey: true });
+    await press('u', { shiftKey: true });
+
+    expect(updateAssets).not.toHaveBeenCalled();
+  });
+
+  it('registers nothing in a shared-link context', () => {
+    vi.spyOn(authManager, 'isSharedLink', 'get').mockReturnValue(true);
+    expect(getBulkUserStateShortcuts({ getAssets: () => [first], onDone })).toEqual([]);
   });
 });

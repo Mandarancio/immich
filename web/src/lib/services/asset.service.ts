@@ -1,5 +1,6 @@
 import {
   AssetColorLabel,
+  AssetFlag,
   AssetJobName,
   AssetMediaSize,
   AssetTypeEnum,
@@ -62,6 +63,7 @@ import { SlideshowState, slideshowStore } from '$lib/stores/slideshow.store';
 import { getAssetMediaUrl, getSharedLink, sleep } from '$lib/utils';
 import { downloadUrl } from '$lib/utils';
 import { colorLabelShortcut } from '$lib/utils/color-label';
+import { clearFlagShortcut, flagShortcut, nextFlag } from '$lib/utils/flag';
 import { handleError } from '$lib/utils/handle-error';
 import { getFormatter } from '$lib/utils/i18n';
 
@@ -247,6 +249,27 @@ export const getAssetActions = (
     shortcuts: Object.values(colorLabelShortcut).map((key) => ({ key })),
   };
 
+  const SetFlag: ActionItem = {
+    title: $t('set_flag'),
+    description: $t('set_flag_description'),
+    $if: () => canRate,
+    onAction: ({ event }) => {
+      const key = event instanceof KeyboardEvent ? event.key : undefined;
+      if (key === flagShortcut[AssetFlag.Pick]) {
+        return handleSetFlag(asset, nextFlag([asset], AssetFlag.Pick));
+      }
+      if (key === flagShortcut[AssetFlag.Reject]) {
+        return handleSetFlag(asset, nextFlag([asset], AssetFlag.Reject));
+      }
+      if (key === clearFlagShortcut) {
+        return handleSetFlag(asset, null);
+      }
+    },
+    shortcuts: [flagShortcut[AssetFlag.Pick], flagShortcut[AssetFlag.Reject], clearFlagShortcut].map((key) => ({
+      key,
+    })),
+  };
+
   const AddToAlbum: ActionItem = {
     title: $t('add_to_album'),
     icon: mdiPlus,
@@ -390,6 +413,7 @@ export const getAssetActions = (
     Unfavorite,
     Rate,
     SetColorLabel,
+    SetFlag,
     PlayMotionPhoto,
     StopMotionPhoto,
     PlaySlideshow,
@@ -531,7 +555,22 @@ export const handleSetColorLabel = async (asset: AssetResponseDto, colorLabel: A
   }
 };
 
-type UserStateUpdate = { rating: number | null } | { colorLabel: AssetColorLabel | null };
+export const handleSetFlag = async (asset: AssetResponseDto, flag: AssetFlag | null) => {
+  if (authManager.isSharedLink) {
+    return;
+  }
+
+  const $t = await getFormatter();
+
+  try {
+    const response = await updateAsset({ id: asset.id, updateAssetDto: { flag } });
+    eventManager.emit('AssetUpdate', response);
+  } catch (error) {
+    handleError(error, $t('errors.cant_apply_changes'));
+  }
+};
+
+type UserStateUpdate = { rating: number | null } | { colorLabel: AssetColorLabel | null } | { flag: AssetFlag | null };
 
 /** Sends a per-user state change for many assets and mirrors it onto the local asset objects. */
 const bulkUpdateUserState = async (
@@ -539,7 +578,7 @@ const bulkUpdateUserState = async (
   update: UserStateUpdate,
   apply: (asset: TimelineAsset) => void,
   messages: {
-    success: 'rating_updated_count' | 'color_label_updated_count';
+    success: 'rating_updated_count' | 'color_label_updated_count' | 'flag_updated_count';
     error: 'errors.unable_to_set_rating' | 'errors.cant_apply_changes';
   },
 ) => {
@@ -602,6 +641,25 @@ export const handleBulkSetColorLabel = async (
   return ids;
 };
 
+/** `null` clears the flag. Resolves to the updated ids, or `undefined` if nothing was changed. */
+export const handleBulkSetFlag = async (
+  assets: TimelineAsset[],
+  flag: AssetFlag | null,
+  onFlagged?: (ids: string[], flag: AssetFlag | null) => void,
+) => {
+  const updated = await bulkUpdateUserState(assets, { flag }, (asset) => (asset.flag = flag), {
+    success: 'flag_updated_count',
+    error: 'errors.cant_apply_changes',
+  });
+  if (!updated) {
+    return;
+  }
+
+  const ids = assets.map(({ id }) => id);
+  onFlagged?.(ids, flag);
+  return ids;
+};
+
 /** Toggle semantics: if every target already has the label it is cleared, otherwise it is set. */
 export const nextColorLabel = (assets: Array<{ colorLabel?: AssetColorLabel | null }>, label: AssetColorLabel) =>
   assets.length > 0 && assets.every((asset) => asset.colorLabel === label) ? null : label;
@@ -613,18 +671,20 @@ type BulkUserStateShortcutOptions = {
   getAssets: () => TimelineAsset[];
   onRated?: (ids: string[], rating: number | null) => void;
   onLabeled?: (ids: string[], label: AssetColorLabel | null) => void;
+  onFlagged?: (ids: string[], flag: AssetFlag | null) => void;
   /** called after a successful update, e.g. to clear the selection */
   onDone?: () => void;
 };
 
 /**
- * Keyboard shortcuts for the multi-select context: `0`-`5` rate (`0` clears) and `6`-`9` toggle a color label.
- * Nothing is registered in a shared-link context, and rating keys are skipped when ratings are disabled.
+ * Keyboard shortcuts for the multi-select context: `0`-`5` rate (`0` clears), `6`-`9` toggle a color label and
+ * `k`/`r`/`u` pick, reject and clear the flag. Nothing is registered in a shared-link context, and rating keys are skipped when ratings are disabled.
  */
 export const getBulkUserStateShortcuts = ({
   getAssets,
   onRated,
   onLabeled,
+  onFlagged,
   onDone,
 }: BulkUserStateShortcutOptions): ShortcutOptions[] => {
   if (authManager.isSharedLink || !authManager.authenticated) {
@@ -657,6 +717,27 @@ export const getBulkUserStateShortcuts = ({
       },
     });
   }
+
+  for (const flag of [AssetFlag.Pick, AssetFlag.Reject]) {
+    options.push({
+      shortcut: { key: flagShortcut[flag] },
+      onShortcut: async () => {
+        const assets = getAssets();
+        if (await handleBulkSetFlag(assets, nextFlag(assets, flag), onFlagged)) {
+          onDone?.();
+        }
+      },
+    });
+  }
+
+  options.push({
+    shortcut: { key: clearFlagShortcut },
+    onShortcut: async () => {
+      if (await handleBulkSetFlag(getAssets(), null, onFlagged)) {
+        onDone?.();
+      }
+    },
+  });
 
   return options;
 };

@@ -49,6 +49,13 @@
         ...(authManager.authenticated && authManager.preferences.ratings.enabled
           ? [{ key: ['0-5'], action: $t('rate_asset'), info: $t('rate_asset_description') }]
           : []),
+        ...(authManager.authenticated && !authManager.isSharedLink
+          ? [
+              { key: ['6-9'], action: $t('set_color_label'), info: $t('set_color_label_description') },
+              { key: ['k / r / u'], action: $t('set_flag'), info: $t('set_flag_description') },
+            ]
+          : []),
+        { key: ['c'], action: $t('compare_photos') },
       ],
     },
   }: Props = $props();
