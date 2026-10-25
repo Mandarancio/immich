@@ -1078,6 +1078,8 @@ export type AssetMediaResponseDto = {
     status: AssetMediaStatus;
 };
 export type AssetBulkUpdateDto = {
+    /** Color label (null clears) */
+    colorLabel?: (AssetColorLabel) | null;
     /** Original date and time */
     dateTimeOriginal?: string;
     /** Relative time offset in minutes */
@@ -1298,6 +1300,8 @@ export type TagResponseDto = {
 export type AssetResponseDto = {
     /** Base64 encoded SHA1 hash */
     checksum: string;
+    /** The viewer's own color label */
+    colorLabel?: (AssetColorLabel) | null;
     /** The UTC timestamp when the asset was originally uploaded to Immich. */
     createdAt: string;
     /** Duplicate group ID */
@@ -1355,6 +1359,8 @@ export type AssetResponseDto = {
     width: number | null;
 };
 export type UpdateAssetDto = {
+    /** Color label (null clears) */
+    colorLabel?: (AssetColorLabel) | null;
     /** Original date and time */
     dateTimeOriginal?: string;
     /** Asset description */
@@ -2403,6 +2409,8 @@ export type SearchFilterBranch = {
     albumIds?: IdsFilter;
     checksum?: StringFilter;
     city?: StringFilterNullable;
+    /** Only include assets with one of these color labels, from the viewer perspective; "none" matches unlabeled assets */
+    colorLabels?: (AssetColorLabel | "none")[];
     country?: StringFilterNullable;
     createdAt?: DateFilter;
     description?: StringPatternFilter;
@@ -2437,6 +2445,8 @@ export type SearchFilter = {
     albumIds?: IdsFilter;
     checksum?: StringFilter;
     city?: StringFilterNullable;
+    /** Only include assets with one of these color labels, from the viewer perspective; "none" matches unlabeled assets */
+    colorLabels?: (AssetColorLabel | "none")[];
     country?: StringFilterNullable;
     createdAt?: DateFilter;
     description?: StringPatternFilter;
@@ -2479,6 +2489,8 @@ export type MetadataSearchDto = {
     checksum?: string;
     /** Filter by city name */
     city?: string | null;
+    /** Only include assets with one of these color labels, from the viewer perspective; "none" matches unlabeled assets */
+    colorLabels?: (AssetColorLabel | "none")[];
     /** Filter by country name */
     country?: string | null;
     /** Filter by creation date (after) */
@@ -2612,6 +2624,8 @@ export type RandomSearchDto = {
     albumIds?: string[];
     /** Filter by city name */
     city?: string | null;
+    /** Only include assets with one of these color labels, from the viewer perspective; "none" matches unlabeled assets */
+    colorLabels?: (AssetColorLabel | "none")[];
     /** Filter by country name */
     country?: string | null;
     /** Filter by creation date (after) */
@@ -2677,6 +2691,8 @@ export type SmartSearchDto = {
     albumIds?: string[];
     /** Filter by city name */
     city?: string | null;
+    /** Only include assets with one of these color labels, from the viewer perspective; "none" matches unlabeled assets */
+    colorLabels?: (AssetColorLabel | "none")[];
     /** Filter by country name */
     country?: string | null;
     /** Filter by creation date (after) */
@@ -2746,6 +2762,8 @@ export type StatisticsSearchDto = {
     albumIds?: string[];
     /** Filter by city name */
     city?: string | null;
+    /** Only include assets with one of these color labels, from the viewer perspective; "none" matches unlabeled assets */
+    colorLabels?: (AssetColorLabel | "none")[];
     /** Filter by country name */
     country?: string | null;
     /** Filter by creation date (after) */
@@ -3215,6 +3233,8 @@ export type TagUpdateDto = {
 export type TimeBucketAssetResponseDto = {
     /** Array of city names extracted from EXIF GPS data */
     city?: (string | null)[];
+    /** Array of viewer color labels (null when not labeled) */
+    colorLabel: ((AssetColorLabel) | null)[];
     /** Array of country names extracted from EXIF GPS data */
     country?: (string | null)[];
     /** Array of UTC timestamps when each asset was originally uploaded to Immich */
@@ -3243,6 +3263,8 @@ export type TimeBucketAssetResponseDto = {
     ownerId: string[];
     /** Array of projection types for 360° content (e.g., "EQUIRECTANGULAR", "CUBEFACE", "CYLINDRICAL") */
     projectionType: (string | null)[];
+    /** Array of viewer ratings (1-5 starred, -1 rejected, null unrated) */
+    rating: (number | null)[];
     /** Array of aspect ratios (width/height) for each asset */
     ratio: number[];
     /** Array of stack information as [stackId, assetCount] tuples (null for non-stacked assets) */
@@ -6728,9 +6750,10 @@ export function getExploreData(opts?: Oazapfts.RequestOpts) {
 /**
  * Search large assets
  */
-export function searchLargeAssets({ albumIds, city, country, createdAfter, createdBefore, isEncoded, isFavorite, isMotion, isNotInAlbum, isOffline, lensModel, libraryId, make, minFileSize, model, ocr, personIds, rating, size, state, tagIds, takenAfter, takenBefore, trashedAfter, trashedBefore, $type, updatedAfter, updatedBefore, visibility, withDeleted, withExif }: {
+export function searchLargeAssets({ albumIds, city, colorLabels, country, createdAfter, createdBefore, isEncoded, isFavorite, isMotion, isNotInAlbum, isOffline, lensModel, libraryId, make, minFileSize, model, ocr, personIds, rating, size, state, tagIds, takenAfter, takenBefore, trashedAfter, trashedBefore, $type, updatedAfter, updatedBefore, visibility, withDeleted, withExif }: {
     albumIds?: string[];
     city?: string | null;
+    colorLabels?: (AssetColorLabel | "none")[];
     country?: string | null;
     createdAfter?: string;
     createdBefore?: string;
@@ -6767,6 +6790,7 @@ export function searchLargeAssets({ albumIds, city, country, createdAfter, creat
     }>(`/search/large-assets${QS.query(QS.explode({
         albumIds,
         city,
+        colorLabels,
         country,
         createdAfter,
         createdBefore,
@@ -7662,18 +7686,21 @@ export function tagAssets({ id, bulkIdsDto }: {
 /**
  * Get time bucket
  */
-export function getTimeBucket({ albumId, bbox, isFavorite, isTrashed, key, order, orderBy, personId, slug, tagId, timeBucket, userId, visibility, withCoordinates, withPartners, withStacked }: {
+export function getTimeBucket({ albumId, bbox, colorLabels, isFavorite, isTrashed, key, order, orderBy, personId, rating, slug, tagId, timeBucket, unrated, userId, visibility, withCoordinates, withPartners, withStacked }: {
     albumId?: string;
     bbox?: string;
+    colorLabels?: (AssetColorLabel | "none")[];
     isFavorite?: boolean;
     isTrashed?: boolean;
     key?: string;
     order?: AssetOrder;
     orderBy?: AssetOrderBy;
     personId?: string;
+    rating?: number;
     slug?: string;
     tagId?: string;
     timeBucket: string;
+    unrated?: boolean;
     userId?: string;
     visibility?: AssetVisibility;
     withCoordinates?: boolean;
@@ -7686,15 +7713,18 @@ export function getTimeBucket({ albumId, bbox, isFavorite, isTrashed, key, order
     }>(`/timeline/bucket${QS.query(QS.explode({
         albumId,
         bbox,
+        colorLabels,
         isFavorite,
         isTrashed,
         key,
         order,
         orderBy,
         personId,
+        rating,
         slug,
         tagId,
         timeBucket,
+        unrated,
         userId,
         visibility,
         withCoordinates,
@@ -7707,17 +7737,20 @@ export function getTimeBucket({ albumId, bbox, isFavorite, isTrashed, key, order
 /**
  * Get time buckets
  */
-export function getTimeBuckets({ albumId, bbox, isFavorite, isTrashed, key, order, orderBy, personId, slug, tagId, userId, visibility, withCoordinates, withPartners, withStacked }: {
+export function getTimeBuckets({ albumId, bbox, colorLabels, isFavorite, isTrashed, key, order, orderBy, personId, rating, slug, tagId, unrated, userId, visibility, withCoordinates, withPartners, withStacked }: {
     albumId?: string;
     bbox?: string;
+    colorLabels?: (AssetColorLabel | "none")[];
     isFavorite?: boolean;
     isTrashed?: boolean;
     key?: string;
     order?: AssetOrder;
     orderBy?: AssetOrderBy;
     personId?: string;
+    rating?: number;
     slug?: string;
     tagId?: string;
+    unrated?: boolean;
     userId?: string;
     visibility?: AssetVisibility;
     withCoordinates?: boolean;
@@ -7730,14 +7763,17 @@ export function getTimeBuckets({ albumId, bbox, isFavorite, isTrashed, key, orde
     }>(`/timeline/buckets${QS.query(QS.explode({
         albumId,
         bbox,
+        colorLabels,
         isFavorite,
         isTrashed,
         key,
         order,
         orderBy,
         personId,
+        rating,
         slug,
         tagId,
+        unrated,
         userId,
         visibility,
         withCoordinates,
@@ -8484,6 +8520,13 @@ export enum AssetFileType {
 export enum AssetMediaStatus {
     Created = "created",
     Duplicate = "duplicate"
+}
+export enum AssetColorLabel {
+    Red = "red",
+    Yellow = "yellow",
+    Green = "green",
+    Blue = "blue",
+    Purple = "purple"
 }
 export enum AssetUploadAction {
     Accept = "accept",

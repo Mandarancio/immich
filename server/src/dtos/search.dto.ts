@@ -74,7 +74,7 @@ const BaseSearchSchema = z.object({
     }),
   ocr: z.string().optional().describe('Filter by OCR text content').meta(DEPRECATED_FLAT_FIELD),
   // new in v3.2.0, but flat like the rest so it stays mutually exclusive with the structured filter
-  colorLabels: ColorLabelsFilterSchema.optional().meta({ ...ADDED_V3_2, deprecated: true }),
+  colorLabels: ColorLabelsFilterSchema.optional().meta(ADDED_V3_2),
 });
 
 const BaseSearchWithResultsSchema = BaseSearchSchema.extend({
@@ -333,13 +333,16 @@ export const isAlbumConfined = (branch: SearchFilterBranch): boolean =>
 export const isFullyAlbumConfined = (filter: SearchFilter): boolean =>
   isAlbumConfined(filter) || (!!filter.or?.length && filter.or.every((branch) => isAlbumConfined(branch)));
 
+// flat fields added after the structured filter: not deprecated, but still exclusive with it
+const FLAT_ONLY_FIELDS = new Set(['colorLabels']);
+
 /**
  * The structured shape and the deprecated flat search fields are mutually exclusive
  * TODO(v4): remove together with the deprecated flat fields.
  */
 const withShapeExclusivity = <T extends z.ZodObject<z.ZodRawShape>>(schema: T) => {
   const deprecatedFields = Object.keys(schema.shape).filter(
-    (field) => (schema.shape[field] as z.ZodType).meta()?.deprecated,
+    (field) => (schema.shape[field] as z.ZodType).meta()?.deprecated || FLAT_ONLY_FIELDS.has(field),
   );
 
   return schema.superRefine((dto, ctx) => {

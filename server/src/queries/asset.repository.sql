@@ -340,27 +340,37 @@ where
 limit
   $3
 
--- AssetRepository.getFavoriteIds
+-- AssetRepository.getUserStates
 select
-  "assetId"
+  "assetId",
+  "isFavorite",
+  "rating",
+  "colorLabel"
 from
-  "asset_favorite"
+  "asset_user_state"
 where
   "userId" = $1
   and "assetId" = any ($2::uuid[])
 
--- AssetRepository.addFavorites
+-- AssetRepository.setUserState
+begin
 insert into
-  "asset_favorite" ("userId", "assetId")
+  "asset_user_state" (
+    "userId",
+    "assetId",
+    "isFavorite",
+    "rating",
+    "colorLabel"
+  )
 values
-  ($1, $2)
-on conflict do nothing
-
--- AssetRepository.removeFavorites
-delete from "asset_favorite"
-where
-  "userId" = $1
-  and "assetId" = any ($2::uuid[])
+  ($1, $2, $3, $4, $5)
+on conflict ("userId", "assetId") do update
+set
+  "isFavorite" = $6,
+  "rating" = $7,
+  "colorLabel" = $8,
+  "updatedAt" = now()
+rollback
 
 -- AssetRepository.getCalendarHeatmap
 select
@@ -417,13 +427,60 @@ with
             select
               1 as "exists"
             from
-              "asset_favorite"
+              "asset_user_state"
             where
-              "asset_favorite"."assetId" = "asset"."id"
-              and "asset_favorite"."userId" = $4
+              "asset_user_state"."assetId" = "asset"."id"
+              and "asset_user_state"."userId" = $4
+              and "asset_user_state"."isFavorite" = $5
           )
         )
       ) as "isFavorite",
+      case
+        when "asset"."ownerId" = $6 then (
+          (
+            select
+              "asset_exif"."rating"
+            from
+              "asset_exif"
+            where
+              "asset_exif"."assetId" = "asset"."id"
+          )
+        )
+        else coalesce(
+          (
+            (
+              select
+                "asset_user_state"."rating"
+              from
+                "asset_user_state"
+              where
+                "asset_user_state"."assetId" = "asset"."id"
+                and "asset_user_state"."userId" = $7
+            )
+          ),
+          (
+            (
+              select
+                "asset_exif"."rating"
+              from
+                "asset_exif"
+              where
+                "asset_exif"."assetId" = "asset"."id"
+            )
+          )
+        )
+      end as "rating",
+      (
+        (
+          select
+            "asset_user_state"."colorLabel"
+          from
+            "asset_user_state"
+          where
+            "asset_user_state"."assetId" = "asset"."id"
+            and "asset_user_state"."userId" = $8
+        )
+      ) as "colorLabel",
       asset.type = 'IMAGE' as "isImage",
       asset."deletedAt" is not null as "isTrashed",
       "asset"."livePhotoVideoId",
@@ -465,14 +522,14 @@ with
         where
           "stacked"."stackId" = "asset"."stackId"
           and "stacked"."deletedAt" is null
-          and "stacked"."visibility" = $5
+          and "stacked"."visibility" = $9
         group by
           "stacked"."stackId"
       ) as "stacked_assets" on true
     where
       "asset"."deletedAt" is null
       and "asset"."visibility" in ('archive', 'timeline')
-      and date_trunc('MONTH', "localDateTime" AT TIME ZONE 'UTC') AT TIME ZONE 'UTC' = $6
+      and date_trunc('MONTH', "localDateTime" AT TIME ZONE 'UTC') AT TIME ZONE 'UTC' = $10
       and not exists (
         select
         from
@@ -492,6 +549,8 @@ with
       coalesce(array_agg("id"), '{}') as "id",
       coalesce(array_agg("visibility"), '{}') as "visibility",
       coalesce(array_agg("isFavorite"), '{}') as "isFavorite",
+      coalesce(array_agg("rating"), '{}') as "rating",
+      coalesce(array_agg("colorLabel"), '{}') as "colorLabel",
       coalesce(array_agg("isImage"), '{}') as "isImage",
       coalesce(array_agg("isTrashed"), '{}') as "isTrashed",
       coalesce(array_agg("livePhotoVideoId"), '{}') as "livePhotoVideoId",
