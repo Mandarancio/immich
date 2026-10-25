@@ -20,6 +20,7 @@ import { Chunked, ChunkedArray, ChunkedSet, DummyValue, GenerateSql } from 'src/
 import {
   AssetColorLabel,
   AssetFileType,
+  AssetFlag,
   AssetOrder,
   AssetOrderBy,
   AssetStatus,
@@ -66,8 +67,18 @@ import { globToPostgresRegex } from 'src/utils/misc.js';
 
 export type AssetStats = Record<AssetType, number>;
 
-export type UserState = { isFavorite: boolean; rating: number | null; colorLabel: AssetColorLabel | null };
-export type UserStateChange = { isFavorite?: boolean; rating?: number | null; colorLabel?: AssetColorLabel | null };
+export type UserState = {
+  isFavorite: boolean;
+  rating: number | null;
+  colorLabel: AssetColorLabel | null;
+  flag: AssetFlag | null;
+};
+export type UserStateChange = {
+  isFavorite?: boolean;
+  rating?: number | null;
+  colorLabel?: AssetColorLabel | null;
+  flag?: AssetFlag | null;
+};
 
 export interface BoundingBox {
   west: number;
@@ -757,7 +768,7 @@ export class AssetRepository {
 
     const rows = await this.db
       .selectFrom('asset_user_state')
-      .select(['assetId', 'isFavorite', 'rating', 'colorLabel'])
+      .select(['assetId', 'isFavorite', 'rating', 'colorLabel', 'flag'])
       .where('userId', '=', userId)
       .where('assetId', '=', anyUuid(assetIds))
       .execute();
@@ -765,7 +776,11 @@ export class AssetRepository {
   }
 
   @GenerateSql({
-    params: [DummyValue.UUID, [DummyValue.UUID], { isFavorite: true, rating: 3, colorLabel: AssetColorLabel.Red }],
+    params: [
+      DummyValue.UUID,
+      [DummyValue.UUID],
+      { isFavorite: true, rating: 3, colorLabel: AssetColorLabel.Red, flag: AssetFlag.Pick },
+    ],
   })
   @Chunked({ paramIndex: 1, chunkSize: 4000 })
   async setUserState(userId: string, assetIds: string[], change: UserStateChange): Promise<void> {
@@ -780,7 +795,7 @@ export class AssetRepository {
         .values(assetIds.map((assetId) => ({ userId, assetId, ...values })))
         .onConflict((oc) => oc.columns(['userId', 'assetId']).doUpdateSet({ ...values, updatedAt: sql`now()` }))
         .execute();
-      // a row without a favorite, rating or color carries no state
+      // a row without a favorite, rating, color or flag carries no state
       await tx
         .deleteFrom('asset_user_state')
         .where('userId', '=', userId)
@@ -788,6 +803,7 @@ export class AssetRepository {
         .where('isFavorite', '=', false)
         .where('rating', 'is', null)
         .where('colorLabel', 'is', null)
+        .where('flag', 'is', null)
         .execute();
     });
   }

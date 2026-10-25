@@ -13,7 +13,9 @@ describe('mapAsset viewer state', () => {
   it('should use the viewer state for a non-owner', () => {
     const auth = AuthFactory.create();
     const asset = build();
-    const viewerState = new Map([[asset.id, { isFavorite: true, rating: 4, colorLabel: AssetColorLabel.Red }]]);
+    const viewerState = new Map([
+      [asset.id, { isFavorite: true, rating: 4, colorLabel: AssetColorLabel.Red, flag: null }],
+    ]);
 
     const dto = mapAsset(asset, { auth, viewerState });
 
@@ -25,7 +27,7 @@ describe('mapAsset viewer state', () => {
   it('should fall back to the exif rating when the viewer has no rating', () => {
     const auth = AuthFactory.create();
     const asset = build();
-    const viewerState = new Map([[asset.id, { isFavorite: false, rating: null, colorLabel: null }]]);
+    const viewerState = new Map([[asset.id, { isFavorite: false, rating: null, colorLabel: null, flag: null }]]);
 
     const dto = mapAsset(asset, { auth, viewerState });
 
@@ -36,7 +38,9 @@ describe('mapAsset viewer state', () => {
   it('should keep the exif rating and column favorite for the owner, with the color from the state', () => {
     const auth = AuthFactory.create();
     const asset = build(auth.user.id);
-    const viewerState = new Map([[asset.id, { isFavorite: true, rating: 5, colorLabel: AssetColorLabel.Blue }]]);
+    const viewerState = new Map([
+      [asset.id, { isFavorite: true, rating: 5, colorLabel: AssetColorLabel.Blue, flag: null }],
+    ]);
 
     const dto = mapAsset({ ...asset, isFavorite: false }, { auth, viewerState });
 

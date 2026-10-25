@@ -99,7 +99,7 @@ describe(AssetService.name, () => {
       mocks.access.asset.checkAlbumAccess.mockResolvedValue(new Set([asset.id]));
       mocks.asset.getById.mockResolvedValue(getForAsset(asset));
       mocks.asset.getUserStates.mockResolvedValue(
-        new Map([[asset.id, { isFavorite: true, rating: null, colorLabel: null }]]),
+        new Map([[asset.id, { isFavorite: true, rating: null, colorLabel: null, flag: null }]]),
       );
 
       const result = await sut.get(authStub.admin, asset.id);
@@ -113,7 +113,7 @@ describe(AssetService.name, () => {
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
       mocks.asset.getById.mockResolvedValue(getForAsset(asset));
       mocks.asset.getUserStates.mockResolvedValue(
-        new Map([[asset.id, { isFavorite: false, rating: null, colorLabel: AssetColorLabel.Green }]]),
+        new Map([[asset.id, { isFavorite: false, rating: null, colorLabel: AssetColorLabel.Green, flag: null }]]),
       );
 
       const result = await sut.get(authStub.admin, asset.id);
@@ -127,7 +127,7 @@ describe(AssetService.name, () => {
       mocks.access.asset.checkAlbumAccess.mockResolvedValue(new Set([asset.id]));
       mocks.asset.getById.mockResolvedValue(getForAsset(asset));
       mocks.asset.getUserStates.mockResolvedValue(
-        new Map([[asset.id, { isFavorite: false, rating: 5, colorLabel: null }]]),
+        new Map([[asset.id, { isFavorite: false, rating: 5, colorLabel: null, flag: null }]]),
       );
 
       const result = (await sut.get(authStub.admin, asset.id)) as AssetResponseDto;
