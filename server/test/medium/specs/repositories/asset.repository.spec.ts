@@ -6,6 +6,7 @@ import { DB } from 'src/schema/index.js';
 import { down, up } from 'src/schema/migrations/1793000000000-AddAssetFavoriteTable.js';
 import { down as downUserState, up as upUserState } from 'src/schema/migrations/1793000000001-AddAssetUserState.js';
 import { BaseService } from 'src/services/base.service.js';
+import { colorLabelsPredicate, ratingFor } from 'src/utils/database.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { factory } from 'test/small.factory.js';
 import { getKyselyDB } from 'test/utils.js';
@@ -600,6 +601,66 @@ describe(AssetRepository.name, () => {
       expect(await sut.getUserStates(user.id, [asset.id])).toEqual(new Map());
 
       await expect(sut.setUserState(user.id, [asset.id], { rating: 6 })).rejects.toThrow();
+    });
+  });
+
+  describe('viewer-aware query helpers', () => {
+    it('should resolve the effective rating per viewer', async () => {
+      const { ctx } = setup();
+      const { user: owner } = await ctx.newUser();
+      const { user: viewer } = await ctx.newUser();
+      const { asset: shared } = await ctx.newAsset({ ownerId: owner.id });
+      const { asset: noExif } = await ctx.newAsset({ ownerId: owner.id });
+      await ctx.newExif({ assetId: shared.id, rating: 2 });
+      await ctx.get(AssetRepository).setUserState(viewer.id, [shared.id], { rating: 5 });
+      // an owner's own table rating never overrides the exif rating
+      await ctx.get(AssetRepository).setUserState(owner.id, [shared.id], { rating: 4 });
+
+      const rating = async (userId: string, id: string) => {
+        const row = await ctx.database
+          .selectFrom('asset')
+          .select(ratingFor(userId).as('rating'))
+          .where('asset.id', '=', id)
+          .executeTakeFirstOrThrow();
+        return row.rating;
+      };
+
+      await expect(rating(owner.id, shared.id)).resolves.toBe(2);
+      await expect(rating(viewer.id, shared.id)).resolves.toBe(5);
+      await expect(rating(owner.id, noExif.id)).resolves.toBeNull();
+
+      await ctx.get(AssetRepository).setUserState(viewer.id, [shared.id], { rating: null });
+      await expect(rating(viewer.id, shared.id)).resolves.toBe(2);
+    });
+
+    it('should resolve the color label and filter by it', async () => {
+      const { ctx } = setup();
+      const { user: owner } = await ctx.newUser();
+      const { user: viewer } = await ctx.newUser();
+      const { asset: red } = await ctx.newAsset({ ownerId: owner.id });
+      const { asset: blue } = await ctx.newAsset({ ownerId: owner.id });
+      const { asset: plain } = await ctx.newAsset({ ownerId: owner.id });
+      await ctx.get(AssetRepository).setUserState(viewer.id, [red.id], { colorLabel: AssetColorLabel.Red });
+      await ctx.get(AssetRepository).setUserState(viewer.id, [blue.id], { colorLabel: AssetColorLabel.Blue });
+      await ctx.get(AssetRepository).setUserState(owner.id, [plain.id], { colorLabel: AssetColorLabel.Red });
+
+      const ids = async (userId: string, labels: Array<AssetColorLabel | 'none'>) => {
+        const rows = await ctx.database
+          .selectFrom('asset')
+          .select('asset.id')
+          .where('asset.ownerId', '=', owner.id)
+          .where(colorLabelsPredicate(userId, labels))
+          .execute();
+        return rows.map(({ id }) => id).toSorted();
+      };
+
+      await expect(ids(viewer.id, [AssetColorLabel.Red])).resolves.toEqual([red.id]);
+      await expect(ids(viewer.id, [AssetColorLabel.Red, AssetColorLabel.Blue])).resolves.toEqual(
+        [red.id, blue.id].toSorted(),
+      );
+      await expect(ids(viewer.id, ['none'])).resolves.toEqual([plain.id]);
+      await expect(ids(viewer.id, ['none', AssetColorLabel.Blue])).resolves.toEqual([blue.id, plain.id].toSorted());
+      await expect(ids(owner.id, [AssetColorLabel.Red])).resolves.toEqual([plain.id]);
     });
   });
 

@@ -36,7 +36,8 @@ export const ExifResponseSchema = z
 
 class ExifResponseDto extends createZodDto(ExifResponseSchema) {}
 
-export function mapExif(entity: MaybeDehydrated<Exif>): ExifResponseDto {
+// ratingOverride replaces the stored rating when set, i.e. the viewer's own rating on assets they do not own
+export function mapExif(entity: MaybeDehydrated<Exif>, ratingOverride?: number | null): ExifResponseDto {
   return {
     make: entity.make,
     model: entity.model,
@@ -59,6 +60,6 @@ export function mapExif(entity: MaybeDehydrated<Exif>): ExifResponseDto {
     country: entity.country,
     description: entity.description,
     projectionType: entity.projectionType,
-    rating: entity.rating,
+    rating: ratingOverride ?? entity.rating,
   };
 }

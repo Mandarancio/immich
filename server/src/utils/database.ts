@@ -33,6 +33,7 @@ import {
   isAlbumConfined,
 } from 'src/dtos/search.dto.js';
 import {
+  AssetColorLabel,
   AssetFileType,
   AssetOrder,
   AssetOrderBy,
@@ -322,6 +323,45 @@ export function isFavoriteFor(userId: string) {
       ),
     ]),
   ]);
+}
+
+// the viewer's own asset_user_state row for the current asset, as a correlated subselect
+function userStateOf(userId: string) {
+  return expressionBuilder<DB, 'asset'>()
+    .selectFrom('asset_user_state')
+    .whereRef('asset_user_state.assetId', '=', 'asset.id')
+    .where('asset_user_state.userId', '=', userId);
+}
+
+// the effective rating: the exif rating for owned assets, the viewer's own rating (falling back to exif) otherwise
+export function ratingFor(userId: string) {
+  const exifRating = expressionBuilder<DB, 'asset'>()
+    .selectFrom('asset_exif')
+    .select('asset_exif.rating')
+    .whereRef('asset_exif.assetId', '=', 'asset.id');
+  const ownRating = userStateOf(userId).select('asset_user_state.rating');
+
+  return sql<
+    number | null
+  >`case when ${sql.ref('asset.ownerId')} = ${userId} then (${exifRating}) else coalesce((${ownRating}), (${exifRating})) end`;
+}
+
+// the viewer's own color label, for owned and non-owned assets alike
+export function colorLabelFor(userId: string) {
+  return sql<AssetColorLabel | null>`(${userStateOf(userId).select('asset_user_state.colorLabel')})`;
+}
+
+export function colorLabelsPredicate(userId: string, labels: Array<AssetColorLabel | 'none'>): Expression<SqlBool> {
+  const eb = expressionBuilder<DB, 'asset'>();
+  const colors = labels.filter((label): label is AssetColorLabel => label !== 'none');
+  const conditions: Expression<SqlBool>[] = [];
+  if (labels.includes('none')) {
+    conditions.push(eb(colorLabelFor(userId), 'is', null));
+  }
+  if (colors.length > 0) {
+    conditions.push(eb(colorLabelFor(userId), '=', sql<AssetColorLabel>`any(${`{${colors}}`}::text[])`));
+  }
+  return eb.or(conditions);
 }
 
 // readable through another user, mirroring the access checks: a shared album the user is a member of,

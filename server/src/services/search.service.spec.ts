@@ -2,7 +2,7 @@ import { BadRequestException, UnauthorizedException } from '@nestjs/common';
 import { beforeEach, vitest } from 'vitest';
 import { mapAsset } from 'src/dtos/asset-response.dto.js';
 import { SearchSuggestionType } from 'src/dtos/search.dto.js';
-import { AssetVisibility } from 'src/enum.js';
+import { AssetColorLabel, AssetVisibility } from 'src/enum.js';
 import { SearchService } from 'src/services/search.service.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';
@@ -42,6 +42,23 @@ describe(SearchService.name, () => {
 
       expect(mocks.asset.getUserStates).toHaveBeenCalledWith(auth.user.id, [asset.id]);
       expect(result.assets.items[0].isFavorite).toBe(true);
+    });
+
+    it('should report the viewer rating and color label for search results', async () => {
+      const auth = AuthFactory.create();
+      const asset = AssetFactory.from().exif({ rating: 1 }).build();
+      mocks.search.searchMetadata.mockResolvedValue({
+        hasNextPage: false,
+        items: [getForAsset(asset) as never],
+      });
+      mocks.asset.getUserStates.mockResolvedValue(
+        new Map([[asset.id, { isFavorite: false, rating: 4, colorLabel: AssetColorLabel.Red }]]),
+      );
+
+      const result = await sut.searchMetadata(auth, { size: 250 });
+
+      expect(result.assets.items[0].exifInfo?.rating).toBe(4);
+      expect(result.assets.items[0].colorLabel).toBe(AssetColorLabel.Red);
     });
   });
 

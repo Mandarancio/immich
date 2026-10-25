@@ -8,7 +8,7 @@ import { AuthDto } from 'src/dtos/auth.dto.js';
 import { AssetFileType, AssetType, AssetVisibility, Permission } from 'src/enum.js';
 import { AuthRequest } from 'src/middleware/auth.guard.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
-import { AssetRepository } from 'src/repositories/asset.repository.js';
+import { AssetRepository, UserState } from 'src/repositories/asset.repository.js';
 import { EventRepository } from 'src/repositories/event.repository.js';
 import { PartnerRepository } from 'src/repositories/partner.repository.js';
 import { checkAccess } from 'src/utils/access.js';
@@ -237,21 +237,19 @@ export const isPanorama = (asset: { projectionType: string | null; originalFileN
   return asset.projectionType === 'EQUIRECTANGULAR' || asset.originalFileName.toLowerCase().endsWith('.insp');
 };
 
-// favorites the viewer set on assets they do not own; owned assets use the asset column, never the mirror rows
-export const getViewerFavoriteIds = async (
+// the viewer's per-user state (favorite, rating, color label) keyed by asset id. Shared links have no viewer.
+// Owned assets only matter for the color label: their favorite and rating live on the asset and exif rows.
+export const getViewerStates = async (
   repository: Pick<AssetRepository, 'getUserStates'>,
   auth: AuthDto,
   assets: Array<{ id: string; ownerId: string }>,
-): Promise<ReadonlySet<string>> => {
-  if (auth.sharedLink) {
-    return new Set();
+): Promise<ReadonlyMap<string, UserState>> => {
+  if (auth.sharedLink || assets.length === 0) {
+    return new Map();
   }
 
-  const ids = assets.filter(({ ownerId }) => ownerId !== auth.user.id).map(({ id }) => id);
-  if (ids.length === 0) {
-    return new Set();
-  }
-
-  const states = await repository.getUserStates(auth.user.id, ids);
-  return new Set([...states].filter(([, { isFavorite }]) => isFavorite).map(([id]) => id));
+  return repository.getUserStates(
+    auth.user.id,
+    assets.map(({ id }) => id),
+  );
 };

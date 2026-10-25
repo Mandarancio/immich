@@ -44,7 +44,7 @@ import { requireElevatedPermission } from 'src/utils/access.js';
 import {
   getAssetFiles,
   getDimensions,
-  getViewerFavoriteIds,
+  getViewerStates,
   isPanorama,
   onAfterUnlink,
   onBeforeLink,
@@ -84,8 +84,8 @@ export class AssetService extends BaseService {
       throw new BadRequestException('Asset not found');
     }
 
-    const favoriteIds = await getViewerFavoriteIds(this.assetRepository, auth, [asset]);
-    return mapAsset(asset, { withStack: true, auth, favoriteIds });
+    const viewerState = await getViewerStates(this.assetRepository, auth, [asset]);
+    return mapAsset(asset, { withStack: true, auth, viewerState });
   }
 
   async update(auth: AuthDto, id: string, dto: UpdateAssetDto): Promise<AssetResponseDto> {
