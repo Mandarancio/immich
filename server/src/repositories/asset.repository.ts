@@ -9,7 +9,6 @@ import {
   type ShallowDehydrateObject,
   UpdateResult,
   type Updateable,
-  expressionBuilder,
   sql,
 } from 'kysely';
 import { jsonArrayFrom } from 'kysely/helpers/postgres';
@@ -36,7 +35,9 @@ import { AssetJobStatusTable } from 'src/schema/tables/asset-job-status.table.js
 import { AssetMetadataTable } from 'src/schema/tables/asset-metadata.table.js';
 import { AssetTable } from 'src/schema/tables/asset.table.js';
 import {
+  StateViewer,
   anyUuid,
+  applyStateFilters,
   asUuid,
   hasPeople,
   inSharedAlbum,
@@ -45,6 +46,9 @@ import {
   removeUndefinedKeys,
   truncatedDate,
   unnest,
+  viewerColorLabel,
+  viewerFavorite,
+  viewerRating,
   withDefaultVisibility,
   withEdits,
   withExif,
@@ -88,6 +92,9 @@ interface LivePhotoSearchOptions {
 
 interface AssetBuilderOptions {
   isFavorite?: boolean;
+  rating?: number;
+  unrated?: boolean;
+  colorLabels?: Array<AssetColorLabel | 'none'>;
   isTrashed?: boolean;
   isDuplicate?: boolean;
   albumId?: string;
@@ -153,14 +160,7 @@ type UpsertExifOptions = {
 const distinctLocked = <T extends LockableProperty[] | null>(eb: ExpressionBuilder<DB, 'asset_exif'>, columns: T) =>
   sql<T>`nullif(array(select distinct unnest(${eb.ref('asset_exif.lockedProperties')} || ${columns})), '{}')`;
 
-// shared links act as the link creator, whose personal favorites must not leak
-const viewerFavorite = (auth: AuthDto) => {
-  if (!auth.sharedLink) {
-    return isFavoriteFor(auth.user.id);
-  }
-  const eb = expressionBuilder<DB, 'asset'>();
-  return eb.and([eb('asset.ownerId', '=', auth.user.id), eb('asset.isFavorite', '=', true)]);
-};
+const stateViewer = (auth: AuthDto): StateViewer => ({ userId: auth.user.id, sharedLink: !!auth.sharedLink });
 
 const getBoundingCircle = (bbox: BoundingBox) => {
   const { west, south, east, north } = bbox;
@@ -871,12 +871,7 @@ export class AssetRepository {
               return alternatives.length > 0 ? eb.or([isOwner, ...alternatives]) : isOwner;
             }),
           )
-          .$if(options.isFavorite !== undefined, (qb) =>
-            qb.where((eb) => {
-              const favorite = viewerFavorite(auth);
-              return options.isFavorite ? favorite : eb.not(favorite);
-            }),
-          )
+          .$call((qb) => applyStateFilters(qb, stateViewer(auth), options))
           .$if(!!options.assetType, (qb) => qb.where('asset.type', '=', options.assetType!))
           .$if(options.isDuplicate !== undefined, (qb) =>
             qb.where('asset.duplicateId', options.isDuplicate ? 'is not' : 'is', null),
@@ -906,7 +901,9 @@ export class AssetRepository {
             'asset.duration',
             'asset.id',
             'asset.visibility',
-            viewerFavorite(auth).as('isFavorite'),
+            viewerFavorite(stateViewer(auth)).as('isFavorite'),
+            viewerRating(stateViewer(auth)).as('rating'),
+            viewerColorLabel(stateViewer(auth)).as('colorLabel'),
             sql`asset.type = 'IMAGE'`.as('isImage'),
             sql`asset."deletedAt" is not null`.as('isTrashed'),
             'asset.livePhotoVideoId',
@@ -981,12 +978,7 @@ export class AssetRepository {
               return alternatives.length > 0 ? eb.or([isOwner, ...alternatives]) : isOwner;
             }),
           )
-          .$if(options.isFavorite !== undefined, (qb) =>
-            qb.where((eb) => {
-              const favorite = viewerFavorite(auth);
-              return options.isFavorite ? favorite : eb.not(favorite);
-            }),
-          )
+          .$call((qb) => applyStateFilters(qb, stateViewer(auth), options))
           .$if(!!options.withStacked, (qb) =>
             qb
               .where((eb) =>
@@ -1036,6 +1028,8 @@ export class AssetRepository {
             eb.fn.coalesce(eb.fn('array_agg', ['id']), sql.lit('{}')).as('id'),
             eb.fn.coalesce(eb.fn('array_agg', ['visibility']), sql.lit('{}')).as('visibility'),
             eb.fn.coalesce(eb.fn('array_agg', ['isFavorite']), sql.lit('{}')).as('isFavorite'),
+            eb.fn.coalesce(eb.fn('array_agg', ['rating']), sql.lit('{}')).as('rating'),
+            eb.fn.coalesce(eb.fn('array_agg', ['colorLabel']), sql.lit('{}')).as('colorLabel'),
             eb.fn.coalesce(eb.fn('array_agg', ['isImage']), sql.lit('{}')).as('isImage'),
             // TODO: isTrashed is redundant as it will always be all true or false depending on the options
             eb.fn.coalesce(eb.fn('array_agg', ['isTrashed']), sql.lit('{}')).as('isTrashed'),

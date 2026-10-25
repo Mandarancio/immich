@@ -1,7 +1,7 @@
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
 import { BBoxSchema } from 'src/dtos/bbox.dto.js';
-import { AssetOrderBySchema, AssetOrderSchema, AssetVisibilitySchema } from 'src/enum.js';
+import { AssetColorLabelSchema, AssetOrderBySchema, AssetOrderSchema, AssetVisibilitySchema } from 'src/enum.js';
 import { stringToBool } from 'src/validation.js';
 
 const TimeBucketQueryBaseSchema = z
@@ -13,6 +13,22 @@ const TimeBucketQueryBaseSchema = z
     isFavorite: stringToBool
       .optional()
       .describe('Filter by favorite status (true for favorites only, false for non-favorites only)'),
+    rating: z
+      .int()
+      .min(1)
+      .max(5)
+      .optional()
+      .describe('Only include assets rated at least this many stars (1-5), from the viewer perspective'),
+    unrated: stringToBool.optional().describe('Include only unrated assets (combined with rating as OR)'),
+    colorLabels: z
+      .preprocess(
+        (val) => (typeof val === 'string' ? val.split(',') : val),
+        z.array(z.union([AssetColorLabelSchema, z.literal('none')])),
+      )
+      .optional()
+      .describe(
+        'Only include assets with one of these color labels (comma-separated); "none" matches unlabeled assets',
+      ),
     isTrashed: stringToBool
       .optional()
       .describe('Filter by trash status (true for trashed assets only, false for non-trashed only)'),
@@ -82,6 +98,12 @@ const TimeBucketAssetResponseSchema = z
       .array(z.number().meta({ format: 'double' }))
       .describe('Array of aspect ratios (width/height) for each asset'),
     isFavorite: z.array(z.boolean()).describe('Array indicating whether each asset is favorited'),
+    rating: z
+      .array(z.int().min(-1).max(5).nullable())
+      .describe('Array of viewer ratings (1-5 starred, -1 rejected, null unrated)'),
+    colorLabel: z
+      .array(AssetColorLabelSchema.nullable())
+      .describe('Array of viewer color labels (null when not labeled)'),
     visibility: z
       .array(AssetVisibilitySchema)
       .describe('Array of visibility statuses for each asset (e.g., ARCHIVE, TIMELINE, HIDDEN, LOCKED)'),

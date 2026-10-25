@@ -62,9 +62,9 @@ export class TimelineService extends BaseService {
     const includesOtherUsers = dto.withPartners || (dto.userId && dto.userId !== auth.user.id);
     if (includesOtherUsers) {
       dto.visibility ??= AssetVisibility.Timeline;
-      if (dto.visibility !== AssetVisibility.Timeline || dto.isTrashed || dto.isFavorite !== undefined) {
+      if (dto.visibility !== AssetVisibility.Timeline || dto.isTrashed) {
         throw new BadRequestException(
-          'Only non-archived, non-trashed, non-favorited, non-locked assets can be requested for other users',
+          'Only non-archived, non-trashed, non-locked assets can be requested for other users',
         );
       }
     }

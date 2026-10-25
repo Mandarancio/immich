@@ -1,5 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
-import { AssetVisibility } from 'src/enum.js';
+import { AssetColorLabel, AssetVisibility } from 'src/enum.js';
 import { TimelineService } from 'src/services/timeline.service.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
@@ -214,15 +214,13 @@ describe(TimelineService.name, () => {
       );
     });
 
-    it("should throw an error for another user's archived, hidden, trashed or favorite assets", async () => {
+    it("should throw an error for another user's archived, hidden or trashed assets", async () => {
       mocks.access.timeline.checkPartnerAccess.mockResolvedValue(new Set(['partner-id']));
 
       for (const dto of [
         { visibility: AssetVisibility.Archive },
         { visibility: AssetVisibility.Hidden },
         { isTrashed: true },
-        { isFavorite: true },
-        { isFavorite: false },
       ]) {
         await expect(
           sut.getTimeBucket(authStub.admin, { timeBucket: 'bucket', userId: 'partner-id', ...dto }),
@@ -230,6 +228,22 @@ describe(TimelineService.name, () => {
       }
 
       expect(mocks.asset.getTimeBucket).not.toHaveBeenCalled();
+    });
+
+    it("should allow favorite, rating and color label filters on another user's timeline", async () => {
+      mocks.access.timeline.checkPartnerAccess.mockResolvedValue(new Set(['partner-id']));
+      mocks.asset.getTimeBucket.mockResolvedValue({ assets: '{}' });
+
+      for (const dto of [
+        { isFavorite: true },
+        { isFavorite: false },
+        { rating: 3, unrated: true },
+        { colorLabels: [AssetColorLabel.Red, 'none' as const] },
+      ]) {
+        await expect(
+          sut.getTimeBucket(authStub.admin, { timeBucket: 'bucket', userId: 'partner-id', ...dto }),
+        ).resolves.toBe('{}');
+      }
     });
 
     it("should throw an error for another user's locked assets even with an elevated session", async () => {
@@ -245,24 +259,21 @@ describe(TimelineService.name, () => {
       expect(mocks.asset.getTimeBucket).not.toHaveBeenCalled();
     });
 
-    it('should throw an error if withParners is true and isFavorite is either true or false', async () => {
-      await expect(
-        sut.getTimeBucket(authStub.admin, {
-          timeBucket: 'bucket',
-          isFavorite: true,
-          withPartners: true,
-          userId: authStub.admin.user.id,
-        }),
-      ).rejects.toThrow(BadRequestException);
+    it('should allow isFavorite filtering when withPartners is true', async () => {
+      mocks.partner.getAll.mockResolvedValue([]);
+      mocks.asset.getTimeBucket.mockResolvedValue({ assets: '{}' });
 
-      await expect(
-        sut.getTimeBucket(authStub.admin, {
-          timeBucket: 'bucket',
-          isFavorite: false,
-          withPartners: true,
-          userId: authStub.admin.user.id,
-        }),
-      ).rejects.toThrow(BadRequestException);
+      for (const isFavorite of [true, false]) {
+        await expect(
+          sut.getTimeBucket(authStub.admin, {
+            timeBucket: 'bucket',
+            isFavorite,
+            withPartners: true,
+            userId: authStub.admin.user.id,
+          }),
+        ).resolves.toBe('{}');
+      }
+      expect(mocks.asset.getTimeBucket).toHaveBeenCalledTimes(2);
     });
 
     it('should throw an error if withParners is true and isTrash is true', async () => {

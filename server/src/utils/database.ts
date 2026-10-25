@@ -333,17 +333,21 @@ function userStateOf(userId: string) {
     .where('asset_user_state.userId', '=', userId);
 }
 
-// the effective rating: the exif rating for owned assets, the viewer's own rating (falling back to exif) otherwise
-export function ratingFor(userId: string) {
-  const exifRating = expressionBuilder<DB, 'asset'>()
+// the exif rating of the current asset, as a correlated subselect
+export function exifRating() {
+  return expressionBuilder<DB, 'asset'>()
     .selectFrom('asset_exif')
     .select('asset_exif.rating')
     .whereRef('asset_exif.assetId', '=', 'asset.id');
+}
+
+// the effective rating: the exif rating for owned assets, the viewer's own rating (falling back to exif) otherwise
+export function ratingFor(userId: string) {
   const ownRating = userStateOf(userId).select('asset_user_state.rating');
 
   return sql<
     number | null
-  >`case when ${sql.ref('asset.ownerId')} = ${userId} then (${exifRating}) else coalesce((${ownRating}), (${exifRating})) end`;
+  >`case when ${sql.ref('asset.ownerId')} = ${userId} then (${exifRating()}) else coalesce((${ownRating}), (${exifRating()})) end`;
 }
 
 // the viewer's own color label, for owned and non-owned assets alike
@@ -362,6 +366,70 @@ export function colorLabelsPredicate(userId: string, labels: Array<AssetColorLab
     conditions.push(eb(colorLabelFor(userId), '=', sql<AssetColorLabel>`any(${`{${colors}}`}::text[])`));
   }
   return eb.or(conditions);
+}
+
+export type StateViewer = { userId: string; sharedLink?: boolean };
+
+export type StateFilters = {
+  isFavorite?: boolean;
+  rating?: number;
+  unrated?: boolean;
+  colorLabels?: Array<AssetColorLabel | 'none'>;
+};
+
+// shared links act as the link creator, whose personal state (favorites, rating overrides, colors) must not leak
+export function viewerFavorite({ userId, sharedLink }: StateViewer) {
+  if (!sharedLink) {
+    return isFavoriteFor(userId);
+  }
+  const eb = expressionBuilder<DB, 'asset'>();
+  return eb.and([eb('asset.ownerId', '=', userId), eb('asset.isFavorite', '=', true)]);
+}
+
+export function viewerRating({ userId, sharedLink }: StateViewer) {
+  return sharedLink ? sql<number | null>`(${exifRating()})` : ratingFor(userId);
+}
+
+export function viewerColorLabel({ userId, sharedLink }: StateViewer) {
+  return sharedLink ? sql<AssetColorLabel | null>`null::text` : colorLabelFor(userId);
+}
+
+// favorite, rating and color label filters, evaluated from the viewer's point of view;
+// `rating` (at least n stars) and `unrated` are combined as an OR
+export function applyStateFilters<TB extends keyof DB, O>(
+  qb: SelectQueryBuilder<DB, TB, O>,
+  viewer: StateViewer,
+  { isFavorite, rating, unrated, colorLabels }: StateFilters,
+) {
+  const eb = expressionBuilder<DB, 'asset'>();
+  const conditions: Expression<SqlBool>[] = [];
+
+  if (isFavorite !== undefined) {
+    const favorite = viewerFavorite(viewer);
+    conditions.push(isFavorite ? favorite : eb.not(favorite));
+  }
+
+  const ratingConditions: Expression<SqlBool>[] = [];
+  if (rating !== undefined) {
+    ratingConditions.push(eb(viewerRating(viewer), '>=', rating));
+  }
+  if (unrated) {
+    ratingConditions.push(eb(viewerRating(viewer), 'is', null));
+  }
+  if (ratingConditions.length > 0) {
+    conditions.push(eb.or(ratingConditions));
+  }
+
+  if (colorLabels && colorLabels.length > 0) {
+    if (viewer.sharedLink) {
+      // shared links never expose a color label
+      conditions.push(colorLabels.includes('none') ? sql<SqlBool>`true` : sql<SqlBool>`false`);
+    } else {
+      conditions.push(colorLabelsPredicate(viewer.userId, colorLabels));
+    }
+  }
+
+  return conditions.length > 0 ? qb.where((eb) => eb.and(conditions)) : qb;
 }
 
 // readable through another user, mirroring the access checks: a shared album the user is a member of,
