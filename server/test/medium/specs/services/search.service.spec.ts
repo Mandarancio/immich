@@ -1,6 +1,7 @@
 import { Kysely } from 'kysely';
-import { SearchSuggestionType } from 'src/dtos/search.dto.js';
-import { AlbumUserRole, AssetOrder, AssetVisibility, SearchOrderField } from 'src/enum.js';
+import { AuthDto } from 'src/dtos/auth.dto.js';
+import { MetadataSearchDto, SearchSuggestionType } from 'src/dtos/search.dto.js';
+import { AlbumUserRole, AssetColorLabel, AssetOrder, AssetVisibility, SearchOrderField } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
@@ -36,6 +37,29 @@ const setup = (db?: Kysely<DB>) => {
 beforeAll(async () => {
   defaultDatabase = await getKyselyDB();
 });
+
+const setupShared = async () => {
+  const { sut, ctx } = setup();
+  const { user: owner } = await ctx.newUser();
+  const { user: member } = await ctx.newUser();
+  // rated 1 by the owner (exif); the member rates it 4 and labels it red, the owner labels it blue
+  const { asset } = await ctx.newAsset({ ownerId: owner.id });
+  await ctx.newExif({ assetId: asset.id, rating: 1 });
+  // only the member rates and labels this one
+  const { asset: plain } = await ctx.newAsset({ ownerId: owner.id });
+  await ctx.newExif({ assetId: plain.id, rating: 2 });
+  const { album } = await ctx.newAlbum({ ownerId: owner.id }, [asset.id, plain.id]);
+  await ctx.newAlbumUser({ albumId: album.id, userId: member.id, role: AlbumUserRole.Viewer });
+  const assets = ctx.get(AssetRepository);
+  await assets.setUserState(member.id, [asset.id], { rating: 4, colorLabel: AssetColorLabel.Red });
+  await assets.setUserState(owner.id, [asset.id], { colorLabel: AssetColorLabel.Blue });
+  return { sut, owner: factory.auth({ user: owner }), member: factory.auth({ user: member }), asset, plain, album };
+};
+
+const ids = (response: { assets: { items: Array<{ id: string }> } }) => response.assets.items.map(({ id }) => id);
+
+const searchIds = async (sut: SearchService, auth: AuthDto, dto: MetadataSearchDto) =>
+  ids(await sut.searchMetadata(auth, dto));
 
 describe(SearchService.name, () => {
   it('should work', () => {
@@ -215,6 +239,84 @@ describe(SearchService.name, () => {
         const response = await sut.searchMetadata(auth, { size: 250, withStacked: false });
 
         expect(response.assets.items.length).toBe(1);
+      });
+    });
+  });
+
+  describe('viewer-aware rating and color label', () => {
+    describe('legacy', () => {
+      it('should match the rating of the viewer, not the exif rating, for a member', async () => {
+        const { sut, member, asset, album } = await setupShared();
+        expect(await searchIds(sut, member, { size: 250, albumIds: [album.id], rating: 4 })).toEqual([asset.id]);
+        expect(await searchIds(sut, member, { size: 250, albumIds: [album.id], rating: 1 })).toEqual([]);
+      });
+
+      it('should still match the exif rating for the owner', async () => {
+        const { sut, owner, asset, album } = await setupShared();
+        expect(await searchIds(sut, owner, { size: 250, albumIds: [album.id], rating: 1 })).toEqual([asset.id]);
+        expect(await searchIds(sut, owner, { size: 250, albumIds: [album.id], rating: 4 })).toEqual([]);
+      });
+
+      it('should fall back to the exif rating for a member without an own rating', async () => {
+        const { sut, member, plain, album } = await setupShared();
+        expect(await searchIds(sut, member, { size: 250, albumIds: [album.id], rating: 2 })).toEqual([plain.id]);
+      });
+
+      it('should filter by the color labels of the viewer only', async () => {
+        const { sut, owner, member, asset, plain, album } = await setupShared();
+        const search = (auth: typeof member, colorLabels: Array<AssetColorLabel | 'none'>) =>
+          sut.searchMetadata(auth, { size: 250, albumIds: [album.id], colorLabels }).then((response) => ids(response));
+
+        expect(await search(member, [AssetColorLabel.Red])).toEqual([asset.id]);
+        expect(await search(owner, [AssetColorLabel.Red])).toEqual([]);
+        expect(await search(owner, [AssetColorLabel.Blue])).toEqual([asset.id]);
+        expect(await search(member, [AssetColorLabel.Blue])).toEqual([]);
+        expect(await search(member, ['none'])).toEqual([plain.id]);
+        const both = await search(member, ['none', AssetColorLabel.Red]);
+        expect(both.sort()).toEqual([asset.id, plain.id].sort());
+      });
+    });
+
+    describe('new shape', () => {
+      it('should match the rating of the viewer, not the exif rating, for a member', async () => {
+        const { sut, member, asset, album } = await setupShared();
+        const filter = (eq: number) => ({ albumIds: { any: [album.id] }, rating: { eq } });
+        expect(await searchIds(sut, member, { size: 250, filter: filter(4) })).toEqual([asset.id]);
+        expect(await searchIds(sut, member, { size: 250, filter: filter(1) })).toEqual([]);
+      });
+
+      it('should still match the exif rating for the owner', async () => {
+        const { sut, owner, asset, album } = await setupShared();
+        const response = await sut.searchMetadata(owner, {
+          size: 250,
+          filter: { albumIds: { any: [album.id] }, rating: { lte: 1 } },
+        });
+        expect(ids(response)).toEqual([asset.id]);
+      });
+
+      it('should filter by the color labels of the viewer only', async () => {
+        const { sut, owner, member, asset, plain, album } = await setupShared();
+        const search = (auth: typeof member, colorLabels: Array<AssetColorLabel | 'none'>) =>
+          sut
+            .searchMetadata(auth, { size: 250, filter: { albumIds: { any: [album.id] }, colorLabels } })
+            .then((response) => ids(response));
+
+        expect(await search(member, [AssetColorLabel.Red])).toEqual([asset.id]);
+        expect(await search(owner, [AssetColorLabel.Red])).toEqual([]);
+        expect(await search(owner, [AssetColorLabel.Blue])).toEqual([asset.id]);
+        expect(await search(member, ['none'])).toEqual([plain.id]);
+      });
+
+      it('should apply colorLabels inside an or branch', async () => {
+        const { sut, member, asset, album } = await setupShared();
+        const response = await sut.searchMetadata(member, {
+          size: 250,
+          filter: {
+            albumIds: { any: [album.id] },
+            or: [{ colorLabels: [AssetColorLabel.Red] }],
+          },
+        });
+        expect(ids(response)).toEqual([asset.id]);
       });
     });
   });
