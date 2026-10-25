@@ -9,6 +9,7 @@ import { tick } from 'svelte';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 import { getTimelineMonthByDate } from '$lib/managers/timeline-manager/internal/search-support.svelte';
+import { liveAssetPayloads, websocketEvents } from '$lib/stores/websocket';
 import { AbortError } from '$lib/utils';
 import { fromISODateTimeUTCToObject } from '$lib/utils/timeline-util';
 import { assetFactory, timelineAssetFactory, toResponseDto } from '@test-data/factories/asset-factory';
@@ -465,9 +466,9 @@ describe('TimelineManager', () => {
         await timelineManager.updateOptions({ isFavorite: false });
         sdkMock.getTimeBuckets.mockClear();
 
-        await timelineManager.setFilter({ isFavorite: true });
+        await timelineManager.setFilter({ isFavorite: true, rating: 3 });
 
-        expect(sdkMock.getTimeBuckets).toHaveBeenCalledWith(expect.objectContaining({ isFavorite: false }));
+        expect(sdkMock.getTimeBuckets).toHaveBeenCalledWith(expect.objectContaining({ isFavorite: false, rating: 3 }));
       });
 
       it('sends the filter favorite toggle when the page has no isFavorite option', async () => {
@@ -489,6 +490,51 @@ describe('TimelineManager', () => {
         await timelineManager.setFilter({ rating: 3 });
 
         expect(sdkMock.getTimeBuckets).not.toHaveBeenCalled();
+      });
+
+      it('does not reload when setFilter({}) is called on a manager without a filter', async () => {
+        const timelineManager = new TimelineManager();
+        await timelineManager.updateOptions({});
+        sdkMock.getTimeBuckets.mockClear();
+
+        await timelineManager.setFilter({});
+
+        expect(sdkMock.getTimeBuckets).not.toHaveBeenCalled();
+      });
+
+      it('does not reload when the filter only differs by a favorite toggle overridden by the page', async () => {
+        const timelineManager = new TimelineManager();
+        await timelineManager.updateOptions({ isFavorite: false });
+        sdkMock.getTimeBuckets.mockClear();
+
+        await timelineManager.setFilter({ isFavorite: true });
+
+        expect(sdkMock.getTimeBuckets).not.toHaveBeenCalled();
+      });
+
+      it('reloads when a filter is cleared with setFilter({})', async () => {
+        const timelineManager = new TimelineManager();
+        await timelineManager.updateOptions({});
+        await timelineManager.setFilter({ rating: 3 });
+        sdkMock.getTimeBuckets.mockClear();
+
+        await timelineManager.setFilter({});
+
+        expect(sdkMock.getTimeBuckets).toHaveBeenCalledOnce();
+        expect(sdkMock.getTimeBuckets).toHaveBeenCalledWith(expect.objectContaining({ rating: undefined }));
+      });
+
+      it('lets the page isFavorite option win when loading a month', async () => {
+        const timelineManager = new TimelineManager();
+        await timelineManager.updateOptions({ isFavorite: false });
+        await timelineManager.setFilter({ isFavorite: true });
+        await timelineManager.updateViewport({ width: 1588, height: 1000 });
+        await timelineManager.loadTimelineMonth({ year: 2024, month: 3 });
+
+        expect(sdkMock.getTimeBucket).toHaveBeenCalledWith(
+          expect.objectContaining({ timeBucket: '2024-03-01T00:00:00.000Z', isFavorite: false }),
+          expect.anything(),
+        );
       });
 
       it('keeps the filter when the page options are updated', async () => {
@@ -676,6 +722,130 @@ describe('TimelineManager', () => {
 
       expect(timelineManager.assetCount).toEqual(1);
       expect(timelineManager.months[0].getFirstAsset().isFavorite).toEqual(true);
+    });
+  });
+
+  describe('live updates keep per-user rating and color label', () => {
+    let timelineManager: TimelineManager;
+
+    const build = (overrides: Partial<TimelineAsset>) =>
+      deriveLocalDateTimeFromFileCreatedAt(timelineAssetFactory.build(overrides));
+    const first = () => timelineManager.months[0].getFirstAsset();
+
+    beforeEach(async () => {
+      timelineManager = new TimelineManager();
+      sdkMock.getTimeBuckets.mockResolvedValue([]);
+      await timelineManager.updateViewport({ width: 1588, height: 1000 });
+    });
+
+    afterEach(() => {
+      timelineManager.destroy();
+      vi.restoreAllMocks();
+    });
+
+    it('does not overwrite rating and colorLabel of an existing asset on a live update', () => {
+      const asset = build({ rating: 4, colorLabel: AssetColorLabel.Red, isFavorite: false });
+      timelineManager.upsertAssets([asset]);
+
+      timelineManager.upsertAssetsFromLiveEvent([{ ...asset, isFavorite: true, rating: null, colorLabel: null }]);
+
+      expect(first()).toMatchObject({ isFavorite: true, rating: 4, colorLabel: AssetColorLabel.Red });
+    });
+
+    it('does not evict an asset from a filtered timeline on a live update', async () => {
+      await timelineManager.updateOptions({ filter: { rating: 3, colorLabels: [AssetColorLabel.Red] } });
+      const asset = build({ rating: 4, colorLabel: AssetColorLabel.Red, isFavorite: false });
+      timelineManager.upsertAssets([asset]);
+      expect(timelineManager.assetCount).toEqual(1);
+
+      timelineManager.upsertAssetsFromLiveEvent([{ ...asset, isFavorite: true, rating: null, colorLabel: null }]);
+
+      expect(timelineManager.assetCount).toEqual(1);
+      expect(first()).toMatchObject({ isFavorite: true, rating: 4, colorLabel: AssetColorLabel.Red });
+      expect(timelineManager.isExcluded(first())).toBe(false);
+    });
+
+    it('keeps payload rating and colorLabel for assets newly inserted by a live event', () => {
+      const asset = build({ rating: 2, colorLabel: AssetColorLabel.Blue });
+
+      timelineManager.upsertAssetsFromLiveEvent([asset]);
+
+      expect(first()).toMatchObject({ id: asset.id, rating: 2, colorLabel: AssetColorLabel.Blue });
+    });
+
+    it('still applies explicit rating and colorLabel changes made locally', () => {
+      const asset = build({ rating: 4, colorLabel: AssetColorLabel.Red });
+      timelineManager.upsertAssets([asset]);
+
+      timelineManager.upsertAssets([{ ...asset, rating: 2, colorLabel: null }]);
+      expect(first()).toMatchObject({ rating: 2, colorLabel: null });
+
+      timelineManager.upsertAssets([{ ...asset, rating: null, colorLabel: AssetColorLabel.Green }]);
+      expect(first()).toMatchObject({ rating: null, colorLabel: AssetColorLabel.Green });
+    });
+
+    it('keeps rating and colorLabel on websocket on_asset_update events', () => {
+      const onSpy = vi.spyOn(websocketEvents, 'on');
+      timelineManager.disconnect();
+      timelineManager.connect();
+      const listener = onSpy.mock.calls.find(([event]) => event === 'on_asset_update')![1] as (
+        asset: AssetResponseDto,
+      ) => void;
+      const asset = build({ rating: 4, colorLabel: AssetColorLabel.Red, isFavorite: false });
+      timelineManager.upsertAssets([asset]);
+
+      listener(
+        assetFactory.build({
+          id: asset.id,
+          ownerId: asset.ownerId,
+          isFavorite: true,
+          isTrashed: asset.isTrashed,
+          visibility: asset.visibility,
+          colorLabel: null,
+          exifInfo: {},
+        }),
+      );
+
+      expect(first()).toMatchObject({ isFavorite: true, rating: 4, colorLabel: AssetColorLabel.Red });
+    });
+
+    it('keeps rating and colorLabel when a websocket payload reaches the AssetUpdate event', () => {
+      const asset = build({ rating: 4, colorLabel: AssetColorLabel.Red, isFavorite: false });
+      timelineManager.upsertAssets([asset]);
+      const payload = assetFactory.build({
+        id: asset.id,
+        ownerId: asset.ownerId,
+        isFavorite: true,
+        isTrashed: asset.isTrashed,
+        visibility: asset.visibility,
+        colorLabel: null,
+        exifInfo: {},
+      });
+      liveAssetPayloads.add(payload);
+
+      eventManager.emit('AssetUpdate', payload);
+
+      expect(first()).toMatchObject({ isFavorite: true, rating: 4, colorLabel: AssetColorLabel.Red });
+    });
+
+    it('still applies the rating of a locally emitted AssetUpdate event', () => {
+      const asset = build({ rating: 4, colorLabel: AssetColorLabel.Red });
+      timelineManager.upsertAssets([asset]);
+
+      eventManager.emit(
+        'AssetUpdate',
+        assetFactory.build({
+          id: asset.id,
+          ownerId: asset.ownerId,
+          isTrashed: asset.isTrashed,
+          visibility: asset.visibility,
+          isFavorite: asset.isFavorite,
+          colorLabel: AssetColorLabel.Red,
+          exifInfo: { rating: 2 },
+        }),
+      );
+
+      expect(first()).toMatchObject({ rating: 2, colorLabel: AssetColorLabel.Red });
     });
   });
 

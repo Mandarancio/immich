@@ -1,3 +1,4 @@
+import { omit } from 'lodash-es';
 import type { TimelineFilter } from '$lib/managers/timeline-filter-manager.svelte';
 import type { TimelineAsset, TimelineManagerOptions } from '../types';
 
@@ -26,6 +27,38 @@ export function updateObject(target: any, source: any): boolean {
   }
   return updated;
 }
+/**
+ * Strip the per-user fields (rating, colorLabel) from a payload that carries no viewer state, so that
+ * applying it to an existing asset never overwrites the viewer's values.
+ */
+export function withoutUserState(asset: TimelineAsset): TimelineAsset {
+  return omit(asset, ['rating', 'colorLabel']) as TimelineAsset;
+}
+
+/** Drop unset values, the favorite toggle when the page overrides it, and empty filters. */
+export function normalizeFilter(
+  filter: TimelineFilter | undefined,
+  pageIsFavorite: boolean | undefined,
+): TimelineFilter | undefined {
+  if (!filter) {
+    return undefined;
+  }
+  const normalized: TimelineFilter = {};
+  if (filter.isFavorite && pageIsFavorite === undefined) {
+    normalized.isFavorite = true;
+  }
+  if (filter.rating !== undefined) {
+    normalized.rating = filter.rating;
+  }
+  if (filter.unrated) {
+    normalized.unrated = true;
+  }
+  if (filter.colorLabels && filter.colorLabels.length > 0) {
+    normalized.colorLabels = filter.colorLabels;
+  }
+  return Object.keys(normalized).length > 0 ? normalized : undefined;
+}
+
 export function isMismatched<T>(option: T | undefined, value: T): boolean {
   return option !== undefined && option !== value;
 }
