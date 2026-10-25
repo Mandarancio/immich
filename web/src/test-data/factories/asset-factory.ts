@@ -41,6 +41,8 @@ export const timelineAssetFactory = Sync.makeFactory<TimelineAsset>({
   createdAt: Sync.each(() => fromISODateTimeUTCToObject(faker.date.past().toISOString())),
   fileCreatedAt: Sync.each(() => fromISODateTimeUTCToObject(faker.date.past().toISOString())),
   isFavorite: Sync.each(() => faker.datatype.boolean()),
+  rating: null,
+  colorLabel: null,
   visibility: AssetVisibility.Timeline,
   isTrashed: false,
   isImage: true,
@@ -62,6 +64,8 @@ export const toResponseDto = (...timelineAsset: TimelineAsset[]) => {
     id: [],
     visibility: [],
     isFavorite: [],
+    rating: [],
+    colorLabel: [],
     isImage: [],
     isTrashed: [],
     livePhotoVideoId: [],
@@ -82,6 +86,8 @@ export const toResponseDto = (...timelineAsset: TimelineAsset[]) => {
     bucketAssets.id.push(asset.id);
     bucketAssets.visibility.push(asset.visibility);
     bucketAssets.isFavorite.push(asset.isFavorite);
+    bucketAssets.rating.push(asset.rating);
+    bucketAssets.colorLabel.push(asset.colorLabel);
     bucketAssets.isImage.push(asset.isImage);
     bucketAssets.isTrashed.push(asset.isTrashed);
     bucketAssets.livePhotoVideoId.push(asset.livePhotoVideoId!);

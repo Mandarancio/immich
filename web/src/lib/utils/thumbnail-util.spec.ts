@@ -92,6 +92,8 @@ describe('getAltText', () => {
 
         visibility: AssetVisibility.Timeline,
         isFavorite: false,
+        rating: null,
+        colorLabel: null,
         isTrashed: false,
         isVideo,
         isImage: !isVideo,

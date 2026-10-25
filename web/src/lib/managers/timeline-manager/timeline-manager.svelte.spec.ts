@@ -1,4 +1,10 @@
-import { AssetOrderBy, AssetVisibility, type AssetResponseDto, type TimeBucketAssetResponseDto } from '@immich/sdk';
+import {
+  AssetColorLabel,
+  AssetOrderBy,
+  AssetVisibility,
+  type AssetResponseDto,
+  type TimeBucketAssetResponseDto,
+} from '@immich/sdk';
 import { tick } from 'svelte';
 import { sdkMock } from '$lib/__mocks__/sdk.mock';
 import { eventManager } from '$lib/managers/event-manager.svelte';
@@ -307,6 +313,194 @@ describe('TimelineManager', () => {
       await timelineManager.updateOptions({ isTrashed: true });
       timelineManager.upsertAssets([asset, trashedAsset]);
       expect(await getAssets(timelineManager)).toEqual([trashedAsset]);
+    });
+  });
+
+  describe('rating and color label data', () => {
+    it('maps rating and colorLabel from bucket arrays', async () => {
+      const assets = [
+        deriveLocalDateTimeFromFileCreatedAt(
+          timelineAssetFactory.build({
+            fileCreatedAt: fromISODateTimeUTCToObject('2024-03-01T00:00:00.000Z'),
+            rating: 4,
+            colorLabel: AssetColorLabel.Red,
+          }),
+        ),
+        deriveLocalDateTimeFromFileCreatedAt(
+          timelineAssetFactory.build({
+            fileCreatedAt: fromISODateTimeUTCToObject('2024-03-01T00:00:00.000Z'),
+            rating: null,
+            colorLabel: null,
+          }),
+        ),
+      ];
+      sdkMock.getTimeBuckets.mockResolvedValue([{ count: 2, timeBucket: '2024-03-01' }]);
+      sdkMock.getTimeBucket.mockResolvedValue(toResponseDto(...assets));
+
+      const timelineManager = new TimelineManager();
+      await timelineManager.updateViewport({ width: 1588, height: 1000 });
+      await timelineManager.loadTimelineMonth({ year: 2024, month: 3 });
+
+      const loaded = await getAssets(timelineManager);
+      const byId = new Map(loaded.map((asset) => [asset.id, asset]));
+      expect(byId.get(assets[0].id)).toMatchObject({ rating: 4, colorLabel: AssetColorLabel.Red });
+      expect(byId.get(assets[1].id)).toMatchObject({ rating: null, colorLabel: null });
+    });
+  });
+
+  describe('filter', () => {
+    const build = (overrides: Partial<TimelineAsset>) =>
+      deriveLocalDateTimeFromFileCreatedAt(timelineAssetFactory.build(overrides));
+
+    it('excludes assets below the minimum rating', async () => {
+      const timelineManager = new TimelineManager();
+      await timelineManager.updateOptions({ filter: { rating: 3 } });
+      expect(timelineManager.isExcluded(build({ rating: 2 }))).toBe(true);
+      expect(timelineManager.isExcluded(build({ rating: 3 }))).toBe(false);
+      expect(timelineManager.isExcluded(build({ rating: 5 }))).toBe(false);
+      expect(timelineManager.isExcluded(build({ rating: null }))).toBe(true);
+      expect(timelineManager.isExcluded(build({ rating: -1 }))).toBe(true);
+    });
+
+    it('treats rating and unrated as OR', async () => {
+      const timelineManager = new TimelineManager();
+      await timelineManager.updateOptions({ filter: { rating: 3, unrated: true } });
+      expect(timelineManager.isExcluded(build({ rating: 2 }))).toBe(true);
+      expect(timelineManager.isExcluded(build({ rating: 4 }))).toBe(false);
+      expect(timelineManager.isExcluded(build({ rating: null }))).toBe(false);
+    });
+
+    it('only keeps unrated assets with unrated alone', async () => {
+      const timelineManager = new TimelineManager();
+      await timelineManager.updateOptions({ filter: { unrated: true } });
+      expect(timelineManager.isExcluded(build({ rating: null }))).toBe(false);
+      expect(timelineManager.isExcluded(build({ rating: 1 }))).toBe(true);
+    });
+
+    it('matches color labels any-of including none', async () => {
+      const timelineManager = new TimelineManager();
+      await timelineManager.updateOptions({ filter: { colorLabels: [AssetColorLabel.Red, 'none'] } });
+      expect(timelineManager.isExcluded(build({ colorLabel: AssetColorLabel.Red }))).toBe(false);
+      expect(timelineManager.isExcluded(build({ colorLabel: null }))).toBe(false);
+      expect(timelineManager.isExcluded(build({ colorLabel: AssetColorLabel.Blue }))).toBe(true);
+    });
+
+    it('applies the favorite toggle from the filter', async () => {
+      const timelineManager = new TimelineManager();
+      await timelineManager.updateOptions({ filter: { isFavorite: true } });
+      expect(timelineManager.isExcluded(build({ isFavorite: false }))).toBe(true);
+      expect(timelineManager.isExcluded(build({ isFavorite: true }))).toBe(false);
+    });
+
+    it('lets the page isFavorite option win over the filter toggle', async () => {
+      const timelineManager = new TimelineManager();
+      await timelineManager.updateOptions({ isFavorite: false, filter: { isFavorite: true } });
+      expect(timelineManager.isExcluded(build({ isFavorite: false }))).toBe(false);
+      expect(timelineManager.isExcluded(build({ isFavorite: true }))).toBe(true);
+    });
+
+    it('applies rating and colorLabel updates to existing assets, including null to value and back', async () => {
+      const timelineManager = new TimelineManager();
+      await timelineManager.updateOptions({});
+      const fixture = build({ rating: null, colorLabel: null });
+      timelineManager.upsertAssets([fixture]);
+
+      timelineManager.upsertAssets([{ ...fixture, rating: 4, colorLabel: AssetColorLabel.Red }]);
+      expect(await getAssets(timelineManager)).toMatchObject([{ rating: 4, colorLabel: AssetColorLabel.Red }]);
+
+      timelineManager.upsertAssets([{ ...fixture, rating: null, colorLabel: null }]);
+      expect(await getAssets(timelineManager)).toMatchObject([{ rating: null, colorLabel: null }]);
+    });
+
+    it('removes a locally edited asset that no longer matches the filter', async () => {
+      const timelineManager = new TimelineManager();
+      await timelineManager.updateOptions({ filter: { rating: 3 } });
+      const fixture = build({ rating: 4 });
+      timelineManager.upsertAssets([fixture]);
+      expect(timelineManager.assetCount).toEqual(1);
+
+      timelineManager.upsertAssets([{ ...fixture, rating: 2 }]);
+      expect(timelineManager.assetCount).toEqual(0);
+    });
+
+    describe('setFilter', () => {
+      beforeEach(() => {
+        sdkMock.getTimeBuckets.mockResolvedValue([{ count: 1, timeBucket: '2024-03-01' }]);
+        sdkMock.getTimeBucket.mockResolvedValue(toResponseDto());
+      });
+
+      it('reloads buckets with the filter params merged with page options', async () => {
+        const timelineManager = new TimelineManager();
+        await timelineManager.updateOptions({ albumId: 'album-1' });
+        sdkMock.getTimeBuckets.mockClear();
+
+        await timelineManager.setFilter({ rating: 3, unrated: true, colorLabels: [AssetColorLabel.Green, 'none'] });
+
+        expect(sdkMock.getTimeBuckets).toHaveBeenCalledOnce();
+        expect(sdkMock.getTimeBuckets).toHaveBeenCalledWith(
+          expect.objectContaining({
+            albumId: 'album-1',
+            rating: 3,
+            unrated: true,
+            colorLabels: [AssetColorLabel.Green, 'none'],
+          }),
+        );
+      });
+
+      it('sends the filter params when loading a month', async () => {
+        const timelineManager = new TimelineManager();
+        await timelineManager.updateOptions({});
+        await timelineManager.setFilter({ rating: 2 });
+        await timelineManager.updateViewport({ width: 1588, height: 1000 });
+        await timelineManager.loadTimelineMonth({ year: 2024, month: 3 });
+
+        expect(sdkMock.getTimeBucket).toHaveBeenCalledWith(
+          expect.objectContaining({ timeBucket: '2024-03-01T00:00:00.000Z', rating: 2 }),
+          expect.anything(),
+        );
+      });
+
+      it('does not let the filter favorite toggle override a page isFavorite option', async () => {
+        const timelineManager = new TimelineManager();
+        await timelineManager.updateOptions({ isFavorite: false });
+        sdkMock.getTimeBuckets.mockClear();
+
+        await timelineManager.setFilter({ isFavorite: true });
+
+        expect(sdkMock.getTimeBuckets).toHaveBeenCalledWith(expect.objectContaining({ isFavorite: false }));
+      });
+
+      it('sends the filter favorite toggle when the page has no isFavorite option', async () => {
+        const timelineManager = new TimelineManager();
+        await timelineManager.updateOptions({});
+        sdkMock.getTimeBuckets.mockClear();
+
+        await timelineManager.setFilter({ isFavorite: true });
+
+        expect(sdkMock.getTimeBuckets).toHaveBeenCalledWith(expect.objectContaining({ isFavorite: true }));
+      });
+
+      it('does not reload when the filter is unchanged', async () => {
+        const timelineManager = new TimelineManager();
+        await timelineManager.updateOptions({});
+        await timelineManager.setFilter({ rating: 3 });
+        sdkMock.getTimeBuckets.mockClear();
+
+        await timelineManager.setFilter({ rating: 3 });
+
+        expect(sdkMock.getTimeBuckets).not.toHaveBeenCalled();
+      });
+
+      it('keeps the filter when the page options are updated', async () => {
+        const timelineManager = new TimelineManager();
+        await timelineManager.updateOptions({});
+        await timelineManager.setFilter({ rating: 3 });
+        sdkMock.getTimeBuckets.mockClear();
+
+        await timelineManager.updateOptions({ albumId: 'album-2' });
+
+        expect(sdkMock.getTimeBuckets).toHaveBeenCalledWith(expect.objectContaining({ albumId: 'album-2', rating: 3 }));
+      });
     });
   });
 

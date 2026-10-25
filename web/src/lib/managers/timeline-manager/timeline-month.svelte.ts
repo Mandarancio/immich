@@ -190,6 +190,8 @@ export class TimelineMonth {
         id: bucketAssets.id[i],
         visibility: bucketAssets.visibility[i],
         isFavorite: bucketAssets.isFavorite[i],
+        rating: bucketAssets.rating[i] ?? null,
+        colorLabel: bucketAssets.colorLabel[i] ?? null,
         isImage: bucketAssets.isImage[i],
         isTrashed: bucketAssets.isTrashed[i],
         isVideo: !bucketAssets.isImage[i],
