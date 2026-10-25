@@ -49,6 +49,7 @@ import {
   unnest,
   viewerColorLabel,
   viewerFavorite,
+  viewerFlag,
   viewerRating,
   withDefaultVisibility,
   withEdits,
@@ -106,6 +107,7 @@ interface AssetBuilderOptions {
   rating?: number;
   unrated?: boolean;
   colorLabels?: Array<AssetColorLabel | 'none'>;
+  flags?: Array<AssetFlag | 'none'>;
   isTrashed?: boolean;
   isDuplicate?: boolean;
   albumId?: string;
@@ -919,6 +921,7 @@ export class AssetRepository {
             viewerFavorite(stateViewer(auth)).as('isFavorite'),
             viewerRating(stateViewer(auth)).as('rating'),
             viewerColorLabel(stateViewer(auth)).as('colorLabel'),
+            viewerFlag(stateViewer(auth)).as('flag'),
             sql`asset.type = 'IMAGE'`.as('isImage'),
             sql`asset."deletedAt" is not null`.as('isTrashed'),
             'asset.livePhotoVideoId',
@@ -1040,6 +1043,7 @@ export class AssetRepository {
             eb.fn.coalesce(eb.fn('array_agg', ['isFavorite']), sql.lit('{}')).as('isFavorite'),
             eb.fn.coalesce(eb.fn('array_agg', ['rating']), sql.lit('{}')).as('rating'),
             eb.fn.coalesce(eb.fn('array_agg', ['colorLabel']), sql.lit('{}')).as('colorLabel'),
+            eb.fn.coalesce(eb.fn('array_agg', ['flag']), sql.lit('{}')).as('flag'),
             eb.fn.coalesce(eb.fn('array_agg', ['isImage']), sql.lit('{}')).as('isImage'),
             // TODO: isTrashed is redundant as it will always be all true or false depending on the options
             eb.fn.coalesce(eb.fn('array_agg', ['isTrashed']), sql.lit('{}')).as('isTrashed'),

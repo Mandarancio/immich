@@ -35,6 +35,7 @@ import {
 import {
   AssetColorLabel,
   AssetFileType,
+  AssetFlag,
   AssetOrder,
   AssetOrderBy,
   AssetVisibility,
@@ -368,6 +369,24 @@ export function colorLabelsPredicate(userId: string, labels: Array<AssetColorLab
   return eb.or(conditions);
 }
 
+// the viewer's own pick/reject flag, for owned and non-owned assets alike
+export function flagFor(userId: string) {
+  return sql<AssetFlag | null>`(${userStateOf(userId).select('asset_user_state.flag')})`;
+}
+
+export function flagsPredicate(userId: string, flags: Array<AssetFlag | 'none'>): Expression<SqlBool> {
+  const eb = expressionBuilder<DB, 'asset'>();
+  const values = flags.filter((flag): flag is AssetFlag => flag !== 'none');
+  const conditions: Expression<SqlBool>[] = [];
+  if (flags.includes('none')) {
+    conditions.push(eb(flagFor(userId), 'is', null));
+  }
+  if (values.length > 0) {
+    conditions.push(eb(flagFor(userId), '=', sql<AssetFlag>`any(${`{${values}}`}::text[])`));
+  }
+  return eb.or(conditions);
+}
+
 export type StateViewer = { userId: string; sharedLink?: boolean };
 
 export type StateFilters = {
@@ -375,6 +394,7 @@ export type StateFilters = {
   rating?: number;
   unrated?: boolean;
   colorLabels?: Array<AssetColorLabel | 'none'>;
+  flags?: Array<AssetFlag | 'none'>;
 };
 
 // shared links act as the link creator, whose personal state (favorites, rating overrides, colors) must not leak
@@ -403,12 +423,24 @@ export function viewerColorLabelsPredicate(viewer: StateViewer, labels: Array<As
   return colorLabelsPredicate(viewer.userId, labels);
 }
 
-// favorite, rating and color label filters, evaluated from the viewer's point of view;
+export function viewerFlag({ userId, sharedLink }: StateViewer) {
+  return sharedLink ? sql<AssetFlag | null>`null::text` : flagFor(userId);
+}
+
+export function viewerFlagsPredicate(viewer: StateViewer, flags: Array<AssetFlag | 'none'>) {
+  if (viewer.sharedLink) {
+    // no flag is ever visible to a shared link, so 'none' matches every asset and any flag matches nothing
+    return sql<SqlBool>`${sql.lit(flags.includes('none'))}`;
+  }
+  return flagsPredicate(viewer.userId, flags);
+}
+
+// favorite, rating, color label and flag filters, evaluated from the viewer's point of view;
 // `rating` (at least n stars) and `unrated` are combined as an OR
 export function applyStateFilters<TB extends keyof DB, O>(
   qb: SelectQueryBuilder<DB, TB, O>,
   viewer: StateViewer,
-  { isFavorite, rating, unrated, colorLabels }: StateFilters,
+  { isFavorite, rating, unrated, colorLabels, flags }: StateFilters,
 ) {
   const eb = expressionBuilder<DB, 'asset'>();
   const conditions: Expression<SqlBool>[] = [];
@@ -431,6 +463,10 @@ export function applyStateFilters<TB extends keyof DB, O>(
 
   if (colorLabels && colorLabels.length > 0) {
     conditions.push(viewerColorLabelsPredicate(viewer, colorLabels));
+  }
+
+  if (flags && flags.length > 0) {
+    conditions.push(viewerFlagsPredicate(viewer, flags));
   }
 
   return conditions.length > 0 ? qb.where((eb) => eb.and(conditions)) : qb;

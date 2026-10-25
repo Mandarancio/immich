@@ -1,7 +1,13 @@
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
 import { BBoxSchema } from 'src/dtos/bbox.dto.js';
-import { AssetColorLabelSchema, AssetOrderBySchema, AssetOrderSchema, AssetVisibilitySchema } from 'src/enum.js';
+import {
+  AssetColorLabelSchema,
+  AssetFlagSchema,
+  AssetOrderBySchema,
+  AssetOrderSchema,
+  AssetVisibilitySchema,
+} from 'src/enum.js';
 import { stringToBool } from 'src/validation.js';
 
 const TimeBucketQueryBaseSchema = z
@@ -30,6 +36,13 @@ const TimeBucketQueryBaseSchema = z
       .describe(
         'Only include assets with one of these color labels (comma-separated); "none" matches unlabeled assets',
       ),
+    flags: z
+      .preprocess(
+        (val) => (typeof val === 'string' ? val.split(',') : val),
+        z.array(z.union([AssetFlagSchema, z.literal('none')])),
+      )
+      .optional()
+      .describe('Only include assets with one of these flags (comma-separated); "none" matches unflagged assets'),
     isTrashed: stringToBool
       .optional()
       .describe('Filter by trash status (true for trashed assets only, false for non-trashed only)'),
@@ -105,6 +118,7 @@ const TimeBucketAssetResponseSchema = z
     colorLabel: z
       .array(AssetColorLabelSchema.nullable())
       .describe('Array of viewer color labels (null when not labeled)'),
+    flag: z.array(AssetFlagSchema.nullable()).describe('Array of viewer pick/reject flags (null when unflagged)'),
     visibility: z
       .array(AssetVisibilitySchema)
       .describe('Array of visibility statuses for each asset (e.g., ARCHIVE, TIMELINE, HIDDEN, LOCKED)'),

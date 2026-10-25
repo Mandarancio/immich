@@ -39,4 +39,28 @@ describe(TimeBucketDto.name, () => {
       expect(parse({ colorLabels: 'pink' }).success).toBe(false);
     });
   });
+
+  describe('flags', () => {
+    it('should split a comma-separated string', () => {
+      expect(parse({ flags: 'pick,none' }).data?.flags).toEqual(['pick', 'none']);
+    });
+
+    it('should accept a single value', () => {
+      expect(parse({ flags: 'reject' }).data?.flags).toEqual(['reject']);
+    });
+
+    it('should accept an array', () => {
+      expect(parse({ flags: ['pick', 'reject'] }).data?.flags).toEqual(['pick', 'reject']);
+    });
+
+    it('should reject an unknown flag', () => {
+      expect(parse({ flags: 'maybe' }).success).toBe(false);
+    });
+
+    it('should leave flags undefined when omitted', () => {
+      const result = parse({});
+      expect(result.success).toBe(true);
+      expect(result.data?.flags).toBeUndefined();
+    });
+  });
 });
