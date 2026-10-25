@@ -1,5 +1,6 @@
 import {
   AssetColorLabel,
+  AssetFlag,
   AssetOrderBy,
   AssetVisibility,
   type AssetResponseDto,
@@ -349,6 +350,36 @@ describe('TimelineManager', () => {
     });
   });
 
+  describe('flag data', () => {
+    it('maps flag from the bucket array', async () => {
+      const assets = [
+        deriveLocalDateTimeFromFileCreatedAt(
+          timelineAssetFactory.build({
+            fileCreatedAt: fromISODateTimeUTCToObject('2024-03-01T00:00:00.000Z'),
+            flag: AssetFlag.Pick,
+          }),
+        ),
+        deriveLocalDateTimeFromFileCreatedAt(
+          timelineAssetFactory.build({
+            fileCreatedAt: fromISODateTimeUTCToObject('2024-03-01T00:00:00.000Z'),
+            flag: null,
+          }),
+        ),
+      ];
+      sdkMock.getTimeBuckets.mockResolvedValue([{ count: 2, timeBucket: '2024-03-01' }]);
+      sdkMock.getTimeBucket.mockResolvedValue(toResponseDto(...assets));
+
+      const timelineManager = new TimelineManager();
+      await timelineManager.updateViewport({ width: 1588, height: 1000 });
+      await timelineManager.loadTimelineMonth({ year: 2024, month: 3 });
+
+      const loaded = await getAssets(timelineManager);
+      const byId = new Map(loaded.map((asset) => [asset.id, asset]));
+      expect(byId.get(assets[0].id)).toMatchObject({ flag: AssetFlag.Pick });
+      expect(byId.get(assets[1].id)).toMatchObject({ flag: null });
+    });
+  });
+
   describe('filter', () => {
     const build = (overrides: Partial<TimelineAsset>) =>
       deriveLocalDateTimeFromFileCreatedAt(timelineAssetFactory.build(overrides));
@@ -384,6 +415,44 @@ describe('TimelineManager', () => {
       expect(timelineManager.isExcluded(build({ colorLabel: AssetColorLabel.Red }))).toBe(false);
       expect(timelineManager.isExcluded(build({ colorLabel: null }))).toBe(false);
       expect(timelineManager.isExcluded(build({ colorLabel: AssetColorLabel.Blue }))).toBe(true);
+    });
+
+    it('matches flags any-of including none', async () => {
+      const timelineManager = new TimelineManager();
+      await timelineManager.updateOptions({ filter: { flags: [AssetFlag.Pick, 'none'] } });
+      expect(timelineManager.isExcluded(build({ flag: AssetFlag.Pick }))).toBe(false);
+      expect(timelineManager.isExcluded(build({ flag: null }))).toBe(false);
+      expect(timelineManager.isExcluded(build({ flag: AssetFlag.Reject }))).toBe(true);
+    });
+
+    it('evicts a locally flagged asset that no longer matches the flags filter and keeps a matching one', async () => {
+      const timelineManager = new TimelineManager();
+      await timelineManager.updateOptions({ filter: { flags: [AssetFlag.Pick] } });
+      const keep = build({ flag: AssetFlag.Pick });
+      const evict = build({ flag: AssetFlag.Pick });
+      timelineManager.upsertAssets([keep, evict]);
+      expect(timelineManager.assetCount).toEqual(2);
+
+      timelineManager.upsertAssets([
+        { ...keep, isFavorite: !keep.isFavorite },
+        { ...evict, flag: AssetFlag.Reject },
+      ]);
+      expect(timelineManager.assetCount).toEqual(1);
+      const remaining = await getAssets(timelineManager);
+      expect(remaining.map((asset) => asset.id)).toEqual([keep.id]);
+    });
+
+    it('applies flag updates to existing assets, including null to value and back', async () => {
+      const timelineManager = new TimelineManager();
+      await timelineManager.updateOptions({});
+      const fixture = build({ flag: null });
+      timelineManager.upsertAssets([fixture]);
+
+      timelineManager.upsertAssets([{ ...fixture, flag: AssetFlag.Reject }]);
+      expect(await getAssets(timelineManager)).toMatchObject([{ flag: AssetFlag.Reject }]);
+
+      timelineManager.upsertAssets([{ ...fixture, flag: null }]);
+      expect(await getAssets(timelineManager)).toMatchObject([{ flag: null }]);
     });
 
     it('applies the favorite toggle from the filter', async () => {
@@ -435,7 +504,12 @@ describe('TimelineManager', () => {
         await timelineManager.updateOptions({ albumId: 'album-1' });
         sdkMock.getTimeBuckets.mockClear();
 
-        await timelineManager.setFilter({ rating: 3, unrated: true, colorLabels: [AssetColorLabel.Green, 'none'] });
+        await timelineManager.setFilter({
+          rating: 3,
+          unrated: true,
+          colorLabels: [AssetColorLabel.Green, 'none'],
+          flags: [AssetFlag.Pick, 'none'],
+        });
 
         expect(sdkMock.getTimeBuckets).toHaveBeenCalledOnce();
         expect(sdkMock.getTimeBuckets).toHaveBeenCalledWith(
@@ -444,6 +518,7 @@ describe('TimelineManager', () => {
             rating: 3,
             unrated: true,
             colorLabels: [AssetColorLabel.Green, 'none'],
+            flags: [AssetFlag.Pick, 'none'],
           }),
         );
       });
@@ -764,6 +839,34 @@ describe('TimelineManager', () => {
       timelineManager.upsertAssetsFromLiveEvent([{ ...asset, isFavorite: true, rating: null, colorLabel: null }]);
 
       expect(first()).toMatchObject({ isFavorite: true, rating: 4, colorLabel: AssetColorLabel.Red });
+    });
+
+    it('does not overwrite flag of an existing asset on a live update', () => {
+      const asset = build({ flag: AssetFlag.Pick, isFavorite: false });
+      timelineManager.upsertAssets([asset]);
+
+      timelineManager.upsertAssetsFromLiveEvent([{ ...asset, isFavorite: true, flag: null }]);
+
+      expect(first()).toMatchObject({ isFavorite: true, flag: AssetFlag.Pick });
+    });
+
+    it('keeps flag when a websocket payload reaches the AssetUpdate event', () => {
+      const asset = build({ flag: AssetFlag.Reject, isFavorite: false });
+      timelineManager.upsertAssets([asset]);
+      const payload = assetFactory.build({
+        id: asset.id,
+        ownerId: asset.ownerId,
+        isFavorite: true,
+        isTrashed: asset.isTrashed,
+        visibility: asset.visibility,
+        flag: null,
+        exifInfo: {},
+      });
+      liveAssetPayloads.add(payload);
+
+      eventManager.emit('AssetUpdate', payload);
+
+      expect(first()).toMatchObject({ isFavorite: true, flag: AssetFlag.Reject });
     });
 
     it('does not evict an asset from a filtered timeline on a live update', async () => {

@@ -1,4 +1,4 @@
-import { AssetColorLabel } from '@immich/sdk';
+import { AssetColorLabel, AssetFlag } from '@immich/sdk';
 import { DateTime } from 'luxon';
 import { locale } from '$lib/stores/preferences.store';
 import { parseUtcDate } from '$lib/utils/date-time';
@@ -113,5 +113,11 @@ describe('toTimelineAsset', () => {
       rating: null,
       colorLabel: null,
     });
+  });
+
+  it('maps flag, defaulting a missing flag to null', () => {
+    expect(toTimelineAsset(assetFactory.build({ flag: AssetFlag.Pick }))).toMatchObject({ flag: AssetFlag.Pick });
+    expect(toTimelineAsset(assetFactory.build({ flag: undefined }))).toMatchObject({ flag: null });
+    expect(toTimelineAsset(assetFactory.build({ flag: null }))).toMatchObject({ flag: null });
   });
 });

@@ -1,4 +1,4 @@
-import { AssetColorLabel } from '@immich/sdk';
+import { AssetColorLabel, AssetFlag } from '@immich/sdk';
 import { TimelineFilterManager } from '$lib/managers/timeline-filter-manager.svelte';
 
 describe('TimelineFilterManager', () => {
@@ -55,6 +55,27 @@ describe('TimelineFilterManager', () => {
     expect(filter.query).toEqual({});
   });
 
+  it('toggles flags', () => {
+    filter.toggleFlag(AssetFlag.Pick);
+    filter.toggleFlag('none');
+    expect(filter.active).toBe(true);
+    expect(filter.query).toEqual({ flags: [AssetFlag.Pick, 'none'] });
+
+    filter.toggleFlag(AssetFlag.Pick);
+    expect(filter.query).toEqual({ flags: ['none'] });
+
+    filter.toggleFlag('none');
+    expect(filter.active).toBe(false);
+    expect(filter.query).toEqual({});
+  });
+
+  it('returns a flags query that is detached from internal state', () => {
+    filter.toggleFlag(AssetFlag.Pick);
+    const { query } = filter;
+    filter.toggleFlag(AssetFlag.Reject);
+    expect(query.flags).toEqual([AssetFlag.Pick]);
+  });
+
   it('returns a query that is detached from internal state', () => {
     filter.toggleColor(AssetColorLabel.Blue);
     const { query } = filter;
@@ -67,6 +88,7 @@ describe('TimelineFilterManager', () => {
     filter.setRating(2);
     filter.unrated = true;
     filter.toggleColor(AssetColorLabel.Purple);
+    filter.toggleFlag(AssetFlag.Reject);
 
     filter.clear();
 
@@ -75,6 +97,7 @@ describe('TimelineFilterManager', () => {
     expect(filter.rating).toBeUndefined();
     expect(filter.unrated).toBe(false);
     expect(filter.colorLabels).toEqual([]);
+    expect(filter.flags).toEqual([]);
     expect(filter.query).toEqual({});
   });
 });

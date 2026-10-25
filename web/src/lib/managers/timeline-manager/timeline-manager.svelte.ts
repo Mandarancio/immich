@@ -441,7 +441,7 @@ export class TimelineManager extends VirtualScrollManager {
     }
   }
 
-  /** `keepUserState`: do not overwrite the rating/colorLabel of assets that are already in the timeline. */
+  /** `keepUserState`: do not overwrite the rating/colorLabel/flag of assets that are already in the timeline. */
   upsertAssets(assets: TimelineAsset[], { keepUserState = false }: { keepUserState?: boolean } = {}) {
     const notUpdated = this.#updateAssets(assets, keepUserState);
     const notExcluded = notUpdated.filter((asset) => !this.isExcluded(asset));
@@ -449,7 +449,7 @@ export class TimelineManager extends VirtualScrollManager {
   }
 
   upsertAssetsFromLiveEvent(assets: TimelineAsset[]) {
-    // live payloads have no viewer state: keep the local rating/colorLabel of existing assets, while
+    // live payloads have no viewer state: keep the local rating/colorLabel/flag of existing assets, while
     // newly inserted assets (returned as not updated) keep the payload values
     const notUpdated = this.#updateAssets(assets, true);
     const insertable = notUpdated.filter((asset) => this.canInsertAssetFromLiveEvent(asset));

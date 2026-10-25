@@ -1,4 +1,4 @@
-import { AssetColorLabel } from '@immich/sdk';
+import { AssetColorLabel, AssetFlag } from '@immich/sdk';
 import { goto } from '$app/navigation';
 import { searchManager } from '$lib/managers/search-manager.svelte';
 import { Route } from '$lib/route';
@@ -85,5 +85,36 @@ describe('SearchManager', () => {
     searchManager.setQuery({ colorLabels: [AssetColorLabel.Blue] });
     searchManager.reset();
     expect(searchManager.filter.colorLabels).toEqual([]);
+  });
+
+  it('starts with no flag filter', () => {
+    expect(searchManager.filter.flags).toEqual([]);
+  });
+
+  it('submits flags only when some are selected', async () => {
+    await searchManager.submit();
+    expect(goto).toHaveBeenLastCalledWith(Route.search({}));
+
+    searchManager.filter.flags = [AssetFlag.Pick, 'none'];
+    await searchManager.submit();
+    expect(goto).toHaveBeenLastCalledWith(Route.search({ flags: [AssetFlag.Pick, 'none'] }));
+
+    searchManager.filter.flags = [];
+    await searchManager.submit();
+    expect(goto).toHaveBeenLastCalledWith(Route.search({}));
+  });
+
+  it('restores flags from a query and round-trips them', async () => {
+    searchManager.setQuery({ flags: [AssetFlag.Reject, 'none'] });
+    expect([...searchManager.filter.flags]).toEqual(['reject', 'none']);
+
+    await searchManager.submit();
+    expect(goto).toHaveBeenLastCalledWith(Route.search({ flags: [AssetFlag.Reject, 'none'] }));
+  });
+
+  it('clears flags on reset', () => {
+    searchManager.setQuery({ flags: [AssetFlag.Pick] });
+    searchManager.reset();
+    expect(searchManager.filter.flags).toEqual([]);
   });
 });

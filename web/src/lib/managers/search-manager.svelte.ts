@@ -97,6 +97,7 @@ class SearchManager {
             : MediaType.All,
       rating: searchQuery.rating,
       colorLabels: [...(searchQuery.colorLabels ?? [])],
+      flags: [...(searchQuery.flags ?? [])],
     };
   }
 
@@ -138,6 +139,7 @@ class SearchManager {
       type,
       rating: this.filter.rating,
       colorLabels: this.filter.colorLabels.length > 0 ? [...this.filter.colorLabels] : undefined,
+      flags: this.filter.flags.length > 0 ? [...this.filter.flags] : undefined,
     };
   }
 
