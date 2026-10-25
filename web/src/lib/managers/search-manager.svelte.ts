@@ -69,6 +69,7 @@ class SearchManager {
             ? null
             : new SvelteSet(searchQuery.tagIds)
           : new SvelteSet(),
+      albumIds: new SvelteSet('albumIds' in searchQuery ? searchQuery.albumIds : []),
       location: {
         country: this.#withNullAsEmptyString(searchQuery.country),
         state: this.#withNullAsEmptyString(searchQuery.state),
@@ -132,6 +133,7 @@ class SearchManager {
       isNotInAlbum: this.filter.display.isNotInAlbum || undefined,
       personIds: this.filter.personIds.size > 0 ? [...this.filter.personIds] : undefined,
       tagIds: this.filter.tagIds === null ? null : this.filter.tagIds.size > 0 ? [...this.filter.tagIds] : undefined,
+      albumIds: this.filter.albumIds.size > 0 ? [...this.filter.albumIds] : undefined,
       type,
       rating: this.filter.rating,
     };
