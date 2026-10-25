@@ -5,6 +5,7 @@ import { HistoryBuilder } from 'src/decorators.js';
 import { AlbumResponseSchema } from 'src/dtos/album.dto.js';
 import { AssetResponseSchema } from 'src/dtos/asset-response.dto.js';
 import {
+  AssetColorLabelSchema,
   AssetOrder,
   AssetOrderSchema,
   AssetTypeSchema,
@@ -21,6 +22,13 @@ const DEPRECATED_FLAT_FIELD = {
   ...new HistoryBuilder().added('v1').stable('v2').deprecated('v3.2.0').getExtensions(),
   deprecated: true,
 };
+
+// any-of; 'none' matches assets the viewer has not labeled
+const ColorLabelsFilterSchema = z
+  .array(z.union([AssetColorLabelSchema, z.literal('none')]))
+  .describe(
+    'Only include assets with one of these color labels, from the viewer perspective; "none" matches unlabeled assets',
+  );
 
 const BaseSearchSchema = z.object({
   libraryId: z.uuidv4().nullish().describe('Library ID to filter by').meta(DEPRECATED_FLAT_FIELD),
@@ -65,6 +73,8 @@ const BaseSearchSchema = z.object({
       deprecated: true,
     }),
   ocr: z.string().optional().describe('Filter by OCR text content').meta(DEPRECATED_FLAT_FIELD),
+  // new in v3.2.0, but flat like the rest so it stays mutually exclusive with the structured filter
+  colorLabels: ColorLabelsFilterSchema.optional().meta({ ...ADDED_V3_2, deprecated: true }),
 });
 
 const BaseSearchWithResultsSchema = BaseSearchSchema.extend({
@@ -267,6 +277,7 @@ const searchFilterBranchShape = {
   originalPath: StringPatternFilterSchema,
   ocr: StringSimilarityFilterSchema,
   rating: NumberFilterNullableSchema,
+  colorLabels: ColorLabelsFilterSchema,
   fileSizeInBytes: NumberFilterSchema,
   takenAt: DateFilterSchema,
   createdAt: DateFilterSchema,

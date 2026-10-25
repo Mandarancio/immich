@@ -654,7 +654,15 @@ export function searchAssetBuilderLegacy(kysely: Kysely<DB>, options: AssetSearc
     .$if(options.rating !== undefined, (qb) =>
       qb
         .innerJoin('asset_exif', 'asset.id', 'asset_exif.assetId')
-        .where('asset_exif.rating', options.rating === null ? 'is' : '=', options.rating!),
+        // the rating as the viewer sees it; without a viewer only the exif rating is known
+        .where(
+          options.viewingUserId ? ratingFor(options.viewingUserId) : sql<number | null>`asset_exif.rating`,
+          options.rating === null ? 'is' : '=',
+          options.rating!,
+        ),
+    )
+    .$if(!!options.colorLabels && options.colorLabels.length > 0 && !!options.viewingUserId, (qb) =>
+      qb.where(colorLabelsPredicate(options.viewingUserId!, options.colorLabels!)),
     )
     .$if(!!options.checksum, (qb) => qb.where('asset.checksum', '=', options.checksum!))
     .$if(!!options.id, (qb) => qb.where('asset.id', '=', asUuid(options.id!)))
@@ -828,7 +836,8 @@ type ComparisonFilter<T> = {
 };
 
 // one operator dispatch for every filter shape; the DTO schemas constrain which
-// operators (and null literals) each filter can actually carry
+// operators (and null literals) each filter can actually carry;
+// `column` is a column reference or an arbitrary SQL expression, e.g. a viewer-dependent rating
 function comparisonPredicates<TB extends keyof DB, RE extends ReferenceExpression<DB, TB>>(
   eb: ExpressionBuilder<DB, TB>,
   column: RE,
@@ -962,7 +971,11 @@ function branchPredicates(eb: AssetExpressionBuilder, branch: SearchFilterBranch
           ),
         ]
       : []),
-    ...comparisonPredicates(eb, 'asset_exif.rating', branch.rating),
+    // the rating as the viewer sees it; without a viewer only the exif rating is known
+    ...comparisonPredicates(eb, viewerId ? ratingFor(viewerId) : sql<number | null>`asset_exif.rating`, branch.rating),
+    ...(branch.colorLabels && branch.colorLabels.length > 0 && viewerId
+      ? [colorLabelsPredicate(viewerId, branch.colorLabels)]
+      : []),
     ...comparisonPredicates(eb, 'asset_exif.fileSizeInByte', branch.fileSizeInBytes),
     ...comparisonPredicates(eb, 'asset.fileCreatedAt', branch.takenAt),
     ...comparisonPredicates(eb, 'asset.createdAt', branch.createdAt),

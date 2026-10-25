@@ -6,7 +6,7 @@ import { columns } from 'src/database.js';
 import { DummyValue, GenerateSql } from 'src/decorators.js';
 import { MapAsset } from 'src/dtos/asset-response.dto.js';
 import { SearchFilter, SearchOrder } from 'src/dtos/search.dto.js';
-import { AssetStatus, AssetType, AssetVisibility, VectorIndex } from 'src/enum.js';
+import { AssetColorLabel, AssetStatus, AssetType, AssetVisibility, VectorIndex } from 'src/enum.js';
 import { probes } from 'src/repositories/database.repository.js';
 import { DB } from 'src/schema/index.js';
 import { AssetExifTable } from 'src/schema/tables/asset-exif.table.js';
@@ -88,6 +88,7 @@ export interface SearchExifOptions {
   state?: string | null;
   description?: string | null;
   rating?: number | null;
+  colorLabels?: Array<AssetColorLabel | 'none'>;
 }
 
 export interface SearchEmbeddingOptions {
