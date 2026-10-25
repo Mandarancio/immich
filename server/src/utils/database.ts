@@ -304,6 +304,51 @@ export function inSharedAlbum(userId: string, assetId: 'asset.id' | 'asset_face.
   );
 }
 
+// the viewer's favorite state: the owner's own flag, or a per-user row for assets shared with them
+export function isFavoriteFor(userId: string) {
+  const eb = expressionBuilder<DB, 'asset'>();
+  return eb.or([
+    eb.and([eb('asset.ownerId', '=', userId), eb('asset.isFavorite', '=', true)]),
+    eb.exists(
+      eb
+        .selectFrom('asset_favorite')
+        .select(sql.lit(1).as('exists'))
+        .whereRef('asset_favorite.assetId', '=', 'asset.id')
+        .where('asset_favorite.userId', '=', userId),
+    ),
+  ]);
+}
+
+// readable through another user: a shared album the user is a member of, or a partner share
+export function isSharedWith(userId: string) {
+  const eb = expressionBuilder<DB, 'asset'>();
+  return eb.or([
+    inSharedAlbum(userId, 'asset.id'),
+    eb.exists(
+      eb
+        .selectFrom('partner')
+        .select(sql.lit(1).as('exists'))
+        .whereRef('partner.sharedById', '=', 'asset.ownerId')
+        .where('partner.sharedWithId', '=', userId),
+    ),
+  ]);
+}
+
+// a favorite row only counts while the user still has access, so stale rows stay hidden
+export function isSharedFavoriteFor(userId: string) {
+  const eb = expressionBuilder<DB, 'asset'>();
+  return eb.and([
+    eb.exists(
+      eb
+        .selectFrom('asset_favorite')
+        .select(sql.lit(1).as('exists'))
+        .whereRef('asset_favorite.assetId', '=', 'asset.id')
+        .where('asset_favorite.userId', '=', userId),
+    ),
+    isSharedWith(userId),
+  ]);
+}
+
 export function inAlbums<O>(qb: SelectQueryBuilder<DB, 'asset', O>, albumIds: string[]) {
   return qb.innerJoin(
     (eb) =>

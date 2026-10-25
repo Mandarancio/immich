@@ -236,3 +236,17 @@ export const getDimensions = ({
 export const isPanorama = (asset: { projectionType: string | null; originalFileName: string }) => {
   return asset.projectionType === 'EQUIRECTANGULAR' || asset.originalFileName.toLowerCase().endsWith('.insp');
 };
+
+// favorites the viewer set on assets they do not own; owned assets use the asset row itself
+export const getViewerFavoriteIds = async (
+  repository: Pick<AssetRepository, 'getFavoriteIds'>,
+  auth: AuthDto,
+  assets: Array<{ id: string; ownerId: string }>,
+): Promise<ReadonlySet<string>> => {
+  if (auth.sharedLink) {
+    return new Set();
+  }
+
+  const ids = assets.filter(({ ownerId }) => ownerId !== auth.user.id).map(({ id }) => id);
+  return ids.length > 0 ? repository.getFavoriteIds(auth.user.id, ids) : new Set();
+};
