@@ -678,6 +678,40 @@ describe(TimelineService.name, () => {
       expect(parsed.id.toSorted()).toEqual(sorted(assets.five, assets.three));
       expect(parsed.colorLabel).toEqual([null, null]);
     });
+
+    it('should match every asset for the none color label and nothing for colors on shared links', async () => {
+      const { sut, ctx } = setup();
+      const { owner, assets, album } = await setupRated(ctx);
+      await ctx.get(AssetRepository).setUserState(owner.id, [assets.five], { colorLabel: AssetColorLabel.Red });
+      const { id: sharedLinkId } = await ctx.get(SharedLinkRepository).create({
+        allowUpload: false,
+        key: Buffer.from(`color-${owner.id}`),
+        type: SharedLinkType.Album,
+        userId: owner.id,
+        albumId: album.id,
+      });
+      const auth = factory.auth({ user: owner, sharedLink: { id: sharedLinkId, showExif: true } });
+
+      const all = JSON.parse(await sut.getTimeBucket(auth, { albumId: album.id, timeBucket: '2024-03-01' }));
+      const none = JSON.parse(
+        await sut.getTimeBucket(auth, {
+          albumId: album.id,
+          timeBucket: '2024-03-01',
+          colorLabels: ['none'],
+        }),
+      );
+      const red = JSON.parse(
+        await sut.getTimeBucket(auth, {
+          albumId: album.id,
+          timeBucket: '2024-03-01',
+          colorLabels: [AssetColorLabel.Red],
+        }),
+      );
+
+      expect(all.id.length).toBeGreaterThan(0);
+      expect(none.id.toSorted()).toEqual(all.id.toSorted());
+      expect(red.id ?? []).toEqual([]);
+    });
   });
 
   it('should strip geodata metadata if shared link without exif', async () => {
