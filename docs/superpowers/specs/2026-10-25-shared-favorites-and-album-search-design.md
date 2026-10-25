@@ -55,7 +55,7 @@ Replaces raw `asset.isFavorite` reads in:
 - timeline buckets: `isFavorite` filter and per-asset `isFavorite` array (`asset.repository.ts`);
 - search: legacy `options.isFavorite` filter and `filter.isFavorite` predicate (`server/src/utils/database.ts`);
 - asset statistics (favorites count);
-- map markers: verify during planning, lower priority.
+- map markers: unchanged (decided during planning).
 
 Not changed: `sync.repository.ts` and sync DTOs.
 
@@ -66,7 +66,8 @@ Generated query snapshots (`server/src/queries/*.sql`) must be regenerated.
 ### Web
 
 - Heart toggle (asset viewer) and bulk favorite action (timeline selection bar) are gated on read access, not ownership.
-- Regenerate OpenAPI spec and TypeScript SDK (`make open-api`).
+- No OpenAPI/SDK regeneration needed (DTOs unchanged).
+- Album-view, memory and shared-link payloads still report `isFavorite: false` for non-owned assets.
 
 ### Tests
 
@@ -88,6 +89,11 @@ The server already supports album filtering: `albumIds` in the search DTO, `inAl
 - Persist in search query state and URL params like the other sections.
 - No server changes expected. During planning, verify that album-confined search returns photos the user does not own when filtering by a shared album (see the album-confined comment near `database.ts:806`).
 - Mobile out of scope.
+
+### Planning findings
+
+- Album-confined smart search does not work today for non-owned photos: `searchSmart` needs an `AlbumRead` access check on `albumIds` and must not force `userIds` to the viewer. A small server fix is part of the album-filter plan.
+- V3 `filter.isFavorite` is viewer-aware, but the search universe is unchanged: non-owned favorites appear in V3 search only when album-confined.
 
 ## Out of scope
 
