@@ -1,5 +1,5 @@
 import { mapAsset } from 'src/dtos/asset-response.dto.js';
-import { AssetColorLabel } from 'src/enum.js';
+import { AssetColorLabel, AssetFlag } from 'src/enum.js';
 import { AssetFactory } from 'test/factories/asset.factory.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';
 import { getForAsset } from 'test/mappers.js';
@@ -65,5 +65,22 @@ describe('mapAsset viewer state', () => {
 
     expect(dto.exifInfo?.rating).toBe(2);
     expect(dto.colorLabel).toBeNull();
+  });
+
+  it('should expose the viewer flag', () => {
+    const auth = AuthFactory.create();
+    const asset = build();
+    const viewerState = new Map([
+      [asset.id, { isFavorite: false, rating: null, colorLabel: null, flag: AssetFlag.Pick }],
+    ]);
+
+    expect(mapAsset(asset, { auth, viewerState }).flag).toBe(AssetFlag.Pick);
+  });
+
+  it('should have a null flag without viewer state', () => {
+    const auth = AuthFactory.create();
+
+    expect(mapAsset(build(), { auth }).flag).toBeNull();
+    expect(mapAsset(build()).flag).toBeNull();
   });
 });
