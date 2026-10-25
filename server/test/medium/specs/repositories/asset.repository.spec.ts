@@ -6,7 +6,7 @@ import { DB } from 'src/schema/index.js';
 import { down, up } from 'src/schema/migrations/1793000000000-AddAssetFavoriteTable.js';
 import { down as downUserState, up as upUserState } from 'src/schema/migrations/1793000000001-AddAssetUserState.js';
 import { BaseService } from 'src/services/base.service.js';
-import { colorLabelsPredicate, ratingFor } from 'src/utils/database.js';
+import { colorLabelsPredicate, flagsPredicate, ratingFor } from 'src/utils/database.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { factory } from 'test/small.factory.js';
 import { getKyselyDB } from 'test/utils.js';
@@ -712,6 +712,54 @@ describe(AssetRepository.name, () => {
       await expect(ids(viewer.id, ['none'])).resolves.toEqual([plain.id]);
       await expect(ids(viewer.id, ['none', AssetColorLabel.Blue])).resolves.toEqual([blue.id, plain.id].toSorted());
       await expect(ids(owner.id, [AssetColorLabel.Red])).resolves.toEqual([plain.id]);
+    });
+
+    it('should resolve the flag and filter by it', async () => {
+      const { ctx } = setup();
+      const { user: owner } = await ctx.newUser();
+      const { user: viewer } = await ctx.newUser();
+      const { asset: picked } = await ctx.newAsset({ ownerId: owner.id });
+      const { asset: rejected } = await ctx.newAsset({ ownerId: owner.id });
+      const { asset: plain } = await ctx.newAsset({ ownerId: owner.id });
+      await ctx.get(AssetRepository).setUserState(viewer.id, [picked.id], { flag: AssetFlag.Pick });
+      await ctx.get(AssetRepository).setUserState(viewer.id, [rejected.id], { flag: AssetFlag.Reject });
+      await ctx.get(AssetRepository).setUserState(owner.id, [plain.id], { flag: AssetFlag.Pick });
+
+      const ids = async (userId: string, flags: Array<AssetFlag | 'none'>) => {
+        const rows = await ctx.database
+          .selectFrom('asset')
+          .select('asset.id')
+          .where('asset.ownerId', '=', owner.id)
+          .where(flagsPredicate(userId, flags))
+          .execute();
+        return rows.map(({ id }) => id).toSorted();
+      };
+
+      await expect(ids(viewer.id, [AssetFlag.Pick])).resolves.toEqual([picked.id]);
+      await expect(ids(viewer.id, [AssetFlag.Pick, AssetFlag.Reject])).resolves.toEqual(
+        [picked.id, rejected.id].toSorted(),
+      );
+      await expect(ids(viewer.id, ['none'])).resolves.toEqual([plain.id]);
+      await expect(ids(viewer.id, ['none', AssetFlag.Reject])).resolves.toEqual([rejected.id, plain.id].toSorted());
+      await expect(ids(owner.id, [AssetFlag.Pick])).resolves.toEqual([plain.id]);
+    });
+
+    it('should count time buckets honoring the flags filter', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { asset: picked } = await ctx.newAsset({ ownerId: user.id, localDateTime: new Date('2024-03-05') });
+      await ctx.newAsset({ ownerId: user.id, localDateTime: new Date('2024-03-06') });
+      await ctx.get(AssetRepository).setUserState(user.id, [picked.id], { flag: AssetFlag.Pick });
+
+      const count = async (flags: Array<AssetFlag | 'none'>) => {
+        const buckets = await sut.getTimeBuckets({ userIds: [user.id], flags }, factory.auth({ user }));
+        return buckets.reduce((total, { count }) => total + count, 0);
+      };
+
+      await expect(count([AssetFlag.Pick])).resolves.toBe(1);
+      await expect(count(['none'])).resolves.toBe(1);
+      await expect(count([AssetFlag.Pick, 'none'])).resolves.toBe(2);
+      await expect(count([AssetFlag.Reject])).resolves.toBe(0);
     });
   });
 

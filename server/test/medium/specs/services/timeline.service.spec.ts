@@ -1,6 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 import { Kysely } from 'kysely';
-import { AlbumUserRole, AssetColorLabel, AssetOrderBy, AssetVisibility, SharedLinkType } from 'src/enum.js';
+import { AlbumUserRole, AssetColorLabel, AssetFlag, AssetOrderBy, AssetVisibility, SharedLinkType } from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
@@ -194,6 +194,7 @@ describe(TimelineService.name, () => {
         country: [],
         createdAt: [],
         duration: [],
+        flag: [],
         id: [],
         visibility: [],
         isFavorite: [],
@@ -620,6 +621,113 @@ describe(TimelineService.name, () => {
       });
       const ownerBuckets = await readBucket(sut, owner);
       expect(ownerBuckets[0].colorLabel[ownerBuckets[0].id.indexOf(assets.five)]).toBe('red');
+    });
+
+    it('should filter by flag per viewer and expose the viewer flag', async () => {
+      const { sut, ctx } = setup();
+      const { owner, member, partner, assets, album } = await setupRated(ctx);
+      const repo = ctx.get(AssetRepository);
+      await repo.setUserState(owner.id, [assets.five], { flag: AssetFlag.Pick });
+      await repo.setUserState(owner.id, [assets.three], { flag: AssetFlag.Reject });
+      await repo.setUserState(member.id, [assets.five], { flag: AssetFlag.Reject });
+      await repo.setUserState(member.id, [assets.none], { flag: AssetFlag.Pick });
+      await repo.setUserState(partner.id, [assets.rejected], { flag: AssetFlag.Pick });
+
+      const everything = sorted(...Object.values(assets));
+      const rest = (...excluded: string[]) => everything.filter((id) => !excluded.includes(id));
+
+      expect(idsOf(await readBucket(sut, owner, { flags: [AssetFlag.Pick] }))).toEqual([assets.five]);
+      expect(idsOf(await readBucket(sut, owner, { flags: [AssetFlag.Reject] }))).toEqual([assets.three]);
+      expect(idsOf(await readBucket(sut, owner, { flags: ['none'] }))).toEqual(rest(assets.five, assets.three));
+      expect(idsOf(await readBucket(sut, owner, { flags: [AssetFlag.Pick, AssetFlag.Reject] }))).toEqual(
+        sorted(assets.five, assets.three),
+      );
+
+      // combined with another filter is an AND
+      await repo.setUserState(owner.id, [assets.five], { colorLabel: AssetColorLabel.Red });
+      await repo.setUserState(owner.id, [assets.three], { colorLabel: AssetColorLabel.Blue });
+      expect(
+        idsOf(
+          await readBucket(sut, owner, {
+            flags: [AssetFlag.Pick, AssetFlag.Reject],
+            colorLabels: [AssetColorLabel.Red],
+          }),
+        ),
+      ).toEqual([assets.five]);
+      expect(
+        idsOf(await readBucket(sut, owner, { flags: [AssetFlag.Pick], colorLabels: [AssetColorLabel.Blue] })),
+      ).toEqual([]);
+
+      // album members only see their own flags
+      const memberOptions = { albumId: album.id } as const;
+      expect(idsOf(await readBucket(sut, member, { ...memberOptions, flags: [AssetFlag.Pick] }))).toEqual([
+        assets.none,
+      ]);
+      expect(idsOf(await readBucket(sut, member, { ...memberOptions, flags: [AssetFlag.Reject] }))).toEqual([
+        assets.five,
+      ]);
+      const memberBuckets = await readBucket(sut, member, memberOptions);
+      const flagById = Object.fromEntries(
+        memberBuckets[0].id.map((id: string, i: number) => [id, memberBuckets[0].flag[i]]),
+      );
+      expect(flagById).toEqual({
+        [assets.five]: 'reject',
+        [assets.three]: null,
+        [assets.none]: 'pick',
+        [assets.rejected]: null,
+      });
+
+      // partners only see their own flags
+      const partnerOptions = { userId: owner.id } as const;
+      expect(idsOf(await readBucket(sut, partner, { ...partnerOptions, flags: [AssetFlag.Pick] }))).toEqual([
+        assets.rejected,
+      ]);
+      const partnerBuckets = await readBucket(sut, partner, partnerOptions);
+      expect(partnerBuckets[0].flag[partnerBuckets[0].id.indexOf(assets.five)]).toBeNull();
+      expect(partnerBuckets[0].flag[partnerBuckets[0].id.indexOf(assets.rejected)]).toBe('pick');
+
+      const ownerBuckets = await readBucket(sut, owner);
+      expect(ownerBuckets[0].flag[ownerBuckets[0].id.indexOf(assets.five)]).toBe('pick');
+      expect(ownerBuckets[0].flag[ownerBuckets[0].id.indexOf(assets.three)]).toBe('reject');
+    });
+
+    it('should count buckets with the flag filter applied', async () => {
+      const { sut, ctx } = setup();
+      const { owner, assets } = await setupRated(ctx);
+      await ctx.get(AssetRepository).setUserState(owner.id, [assets.five], { flag: AssetFlag.Pick });
+      const auth = factory.auth({ user: owner });
+
+      await expect(sut.getTimeBuckets(auth, { flags: [AssetFlag.Pick] })).resolves.toEqual([
+        expect.objectContaining({ count: 1 }),
+      ]);
+      await expect(sut.getTimeBuckets(auth, { flags: [AssetFlag.Reject] })).resolves.toEqual([]);
+      await expect(sut.getTimeBuckets(auth, { flags: ['none'] })).resolves.toEqual([
+        expect.objectContaining({ count: 3 }),
+      ]);
+    });
+
+    it('should show no flags and match every asset for none on shared links', async () => {
+      const { sut, ctx } = setup();
+      const { owner, assets, album } = await setupRated(ctx);
+      await ctx.get(AssetRepository).setUserState(owner.id, [assets.five], { flag: AssetFlag.Pick });
+      const { id: sharedLinkId } = await ctx.get(SharedLinkRepository).create({
+        allowUpload: false,
+        key: Buffer.from(`flag-${owner.id}`),
+        type: SharedLinkType.Album,
+        userId: owner.id,
+        albumId: album.id,
+      });
+      const auth = factory.auth({ user: owner, sharedLink: { id: sharedLinkId, showExif: true } });
+      const read = async (flags?: Array<AssetFlag | 'none'>) =>
+        JSON.parse(await sut.getTimeBucket(auth, { albumId: album.id, timeBucket: '2024-03-01', flags }));
+
+      const all = await read();
+      expect(all.id.length).toBe(4);
+      expect(all.flag).toEqual([null, null, null, null]);
+      const none = await read(['none']);
+      const picked = await read([AssetFlag.Pick]);
+      expect(none.id.toSorted()).toEqual(all.id.toSorted());
+      expect(picked.id ?? []).toEqual([]);
     });
 
     it('should count buckets with the filters applied', async () => {
