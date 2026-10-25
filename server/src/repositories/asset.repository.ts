@@ -16,7 +16,7 @@ import { isEmpty, isUndefined, omitBy } from 'lodash-es';
 import { InjectKysely } from 'nestjs-kysely';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
 import { LockableProperty, Stack } from 'src/database.js';
-import { Chunked, ChunkedArray, DummyValue, GenerateSql } from 'src/decorators.js';
+import { Chunked, ChunkedArray, ChunkedSet, DummyValue, GenerateSql } from 'src/decorators.js';
 import {
   AssetFileType,
   AssetOrder,
@@ -721,6 +721,50 @@ export class AssetRepository {
       .$if(!!isTrashed, (qb) => qb.where('asset.status', '!=', AssetStatus.Deleted))
       .where('deletedAt', isTrashed ? 'is not' : 'is', null)
       .executeTakeFirstOrThrow();
+  }
+
+  @GenerateSql({ params: [DummyValue.UUID, [DummyValue.UUID]] })
+  @ChunkedSet({ paramIndex: 1 })
+  async getFavoriteIds(userId: string, assetIds: string[]): Promise<Set<string>> {
+    if (assetIds.length === 0) {
+      return new Set();
+    }
+
+    const rows = await this.db
+      .selectFrom('asset_favorite')
+      .select('assetId')
+      .where('userId', '=', userId)
+      .where('assetId', '=', anyUuid(assetIds))
+      .execute();
+    return new Set(rows.map(({ assetId }) => assetId));
+  }
+
+  @GenerateSql({ params: [DummyValue.UUID, [DummyValue.UUID]] })
+  @Chunked({ paramIndex: 1, chunkSize: 4000 })
+  async addFavorites(userId: string, assetIds: string[]): Promise<void> {
+    if (assetIds.length === 0) {
+      return;
+    }
+
+    await this.db
+      .insertInto('asset_favorite')
+      .values(assetIds.map((assetId) => ({ userId, assetId })))
+      .onConflict((oc) => oc.doNothing())
+      .execute();
+  }
+
+  @GenerateSql({ params: [DummyValue.UUID, [DummyValue.UUID]] })
+  @Chunked({ paramIndex: 1 })
+  async removeFavorites(userId: string, assetIds: string[]): Promise<void> {
+    if (assetIds.length === 0) {
+      return;
+    }
+
+    await this.db
+      .deleteFrom('asset_favorite')
+      .where('userId', '=', userId)
+      .where('assetId', '=', anyUuid(assetIds))
+      .execute();
   }
 
   @GenerateSql({

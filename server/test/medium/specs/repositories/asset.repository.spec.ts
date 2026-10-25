@@ -502,6 +502,26 @@ describe(AssetRepository.name, () => {
     });
   });
 
+  describe('favorites', () => {
+    it('should add, read and remove favorites per user', async () => {
+      const { ctx, sut } = setup();
+      const { user: owner } = await ctx.newUser();
+      const { user: viewer } = await ctx.newUser();
+      const { user: other } = await ctx.newUser();
+      const { asset } = await ctx.newAsset({ ownerId: owner.id });
+
+      await sut.addFavorites(viewer.id, [asset.id]);
+      await sut.addFavorites(viewer.id, [asset.id]); // idempotent
+
+      await expect(sut.getFavoriteIds(viewer.id, [asset.id])).resolves.toEqual(new Set([asset.id]));
+      await expect(sut.getFavoriteIds(other.id, [asset.id])).resolves.toEqual(new Set());
+      await expect(sut.getFavoriteIds(viewer.id, [])).resolves.toEqual(new Set());
+
+      await sut.removeFavorites(viewer.id, [asset.id]);
+      await expect(sut.getFavoriteIds(viewer.id, [asset.id])).resolves.toEqual(new Set());
+    });
+  });
+
   describe('createAll', () => {
     it('should return an empty array when given an empty input', async () => {
       const { sut } = setup();
