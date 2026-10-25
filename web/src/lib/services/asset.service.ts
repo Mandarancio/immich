@@ -153,7 +153,7 @@ export const getAssetActions = (
   // any logged-in user who can see the asset may favorite it; shared link guests may not
   const canFavorite = !!authUser && (isOwner || !sharedLink);
   // rating and color labels follow the same rule as favorites (per-user state)
-  const canRate = canFavorite;
+  const canRate = canFavorite && !authManager.isSharedLink;
   const isAlbumOwner = !!(authUser && authUser.id === album?.albumUsers[0].user.id);
   const smartSearchEnabled = !!authUser && readPreloadedQuery(getUserConfigQuery()).machineLearning.clip.enabled;
 
@@ -471,6 +471,11 @@ const handleUnfavorite = async (asset: AssetResponseDto) => {
 };
 
 export const handleRate = async (asset: AssetResponseDto, rating: number) => {
+  // per-user state is never written from a shared link view, even by a logged-in owner
+  if (authManager.isSharedLink) {
+    return;
+  }
+
   const $t = await getFormatter();
 
   if (Number.isNaN(rating)) {
@@ -497,6 +502,10 @@ export const handleRate = async (asset: AssetResponseDto, rating: number) => {
 };
 
 export const handleSetColorLabel = async (asset: AssetResponseDto, colorLabel: AssetColorLabel | null) => {
+  if (authManager.isSharedLink) {
+    return;
+  }
+
   const $t = await getFormatter();
 
   try {

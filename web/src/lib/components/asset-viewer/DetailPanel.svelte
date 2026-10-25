@@ -140,7 +140,7 @@
     {/if}
 
     <DetailPanelDescription {asset} {isOwner} />
-    <DetailPanelRating {asset} {isOwner} />
+    <DetailPanelRating {asset} />
     {#if !authManager.isSharedLink && authManager.authenticated}
       <section class="px-4 pt-4">
         <ColorLabelPicker
