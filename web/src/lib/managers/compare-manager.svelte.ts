@@ -166,7 +166,9 @@ class CompareManager {
       return;
     }
 
-    const ids = await handleBulkSetFlag([asset], flag, (ids, flag) => this.#onUpdated?.(ids, { flag }));
+    // captured now: close() or a new open() may run while the write is in flight
+    const onUpdated = this.#onUpdated;
+    const ids = await handleBulkSetFlag([asset], flag, (ids, flag) => onUpdated?.(ids, { flag }));
     if (!ids || flag !== AssetFlag.Reject || !this.isOpen) {
       return;
     }
@@ -188,15 +190,17 @@ class CompareManager {
   async rate(rating: number | null) {
     const asset = this.focused;
     if (asset) {
-      await handleBulkRate([asset], rating, (ids, rating) => this.#onUpdated?.(ids, { rating }));
+      const onUpdated = this.#onUpdated;
+      await handleBulkRate([asset], rating, (ids, rating) => onUpdated?.(ids, { rating }));
     }
   }
 
   async toggleColor(label: AssetColorLabel) {
     const asset = this.focused;
     if (asset) {
+      const onUpdated = this.#onUpdated;
       await handleBulkSetColorLabel([asset], nextColorLabel([asset], label), (ids, colorLabel) =>
-        this.#onUpdated?.(ids, { colorLabel }),
+        onUpdated?.(ids, { colorLabel }),
       );
     }
   }

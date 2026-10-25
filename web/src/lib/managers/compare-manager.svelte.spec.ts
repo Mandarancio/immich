@@ -307,6 +307,74 @@ describe('CompareManager', () => {
     });
   });
 
+  describe('writes in flight while the session changes', () => {
+    // a helper mock that only applies and notifies once `finish` is called
+    const defer = <T>(mock: { mockImplementationOnce: (fn: (...args: never[]) => Promise<string[]>) => unknown }) => {
+      let finish!: () => void;
+      mock.mockImplementationOnce(
+        ((assets: TimelineAsset[], value: T, callback?: (ids: string[], value: T) => void) =>
+          new Promise<string[]>((resolve) => {
+            finish = () => {
+              callback?.(ids(assets), value);
+              resolve(ids(assets));
+            };
+          })) as never,
+      );
+      return () => finish();
+    };
+
+    const mutations = [
+      {
+        name: 'setFlag',
+        mock: () => vi.mocked(handleBulkSetFlag),
+        run: () => compareManager.setFlag(AssetFlag.Pick),
+        update: { flag: AssetFlag.Pick },
+      },
+      {
+        name: 'rate',
+        mock: () => vi.mocked(handleBulkRate),
+        run: () => compareManager.rate(4),
+        update: { rating: 4 },
+      },
+      {
+        name: 'toggleColor',
+        mock: () => vi.mocked(handleBulkSetColorLabel),
+        run: () => compareManager.toggleColor(AssetColorLabel.Red),
+        update: { colorLabel: AssetColorLabel.Red },
+      },
+    ];
+
+    it.each(mutations)('$name still notifies the original callback after close()', async ({ mock, run, update }) => {
+      const assets = build(2);
+      compareManager.open(assets, onUpdated);
+      const finish = defer(mock() as never);
+
+      const pending = run();
+      compareManager.close();
+      finish();
+      await pending;
+
+      expect(onUpdated).toHaveBeenCalledTimes(1);
+      expect(onUpdated).toHaveBeenCalledWith([assets[0].id], update);
+    });
+
+    it.each(mutations)('$name does not leak into a newly opened session', async ({ mock, run, update }) => {
+      const assets = build(2);
+      const otherUpdated = vi.fn();
+      compareManager.open(assets, onUpdated);
+      const finish = defer(mock() as never);
+
+      const pending = run();
+      compareManager.close();
+      compareManager.open(build(2), otherUpdated);
+      finish();
+      await pending;
+
+      expect(onUpdated).toHaveBeenCalledWith([assets[0].id], update);
+      expect(otherUpdated).not.toHaveBeenCalled();
+    });
+  });
+
   describe('zoom', () => {
     it('only loads originals while zoomed in', () => {
       const assets = build(5);
