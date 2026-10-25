@@ -548,7 +548,15 @@ export function searchAssetBuilderLegacy(kysely: Kysely<DB>, options: AssetSearc
     .$if(!!options.checksum, (qb) => qb.where('asset.checksum', '=', options.checksum!))
     .$if(!!options.id, (qb) => qb.where('asset.id', '=', asUuid(options.id!)))
     .$if(!!options.libraryId, (qb) => qb.where('asset.libraryId', '=', asUuid(options.libraryId!)))
-    .$if(!!options.userIds, (qb) => qb.where('asset.ownerId', '=', anyUuid(options.userIds!)))
+    .$if(!!options.userIds, (qb) =>
+      qb.where((eb) => {
+        const isOwner = eb('asset.ownerId', '=', anyUuid(options.userIds!));
+        // favorites search also covers assets other users shared with the viewer
+        return options.isFavorite === true && options.viewingUserId
+          ? eb.or([isOwner, isSharedFavoriteFor(options.viewingUserId)])
+          : isOwner;
+      }),
+    )
     .$if(!!options.encodedVideoPath, (qb) =>
       qb
         .innerJoin('asset_file', (join) =>
@@ -580,7 +588,13 @@ export function searchAssetBuilderLegacy(kysely: Kysely<DB>, options: AssetSearc
         .where(() => sql`f_unaccent(ocr_search.text) %>> f_unaccent(${tokenizeForSearch(options.ocr!).join(' ')})`),
     )
     .$if(!!options.type, (qb) => qb.where('asset.type', '=', options.type!))
-    .$if(options.isFavorite !== undefined, (qb) => qb.where('asset.isFavorite', '=', options.isFavorite!))
+    .$if(options.isFavorite !== undefined, (qb) =>
+      options.viewingUserId
+        ? qb.where((eb) =>
+            options.isFavorite ? isFavoriteFor(options.viewingUserId!) : eb.not(isFavoriteFor(options.viewingUserId!)),
+          )
+        : qb.where('asset.isFavorite', '=', options.isFavorite!),
+    )
     .$if(options.isOffline !== undefined, (qb) => qb.where('asset.isOffline', '=', options.isOffline!))
     .$if(options.isEncoded !== undefined, (qb) =>
       qb.where((eb) => {
@@ -793,16 +807,23 @@ function existsPredicates(
   return [filter.eq ? exists : eb.not(exists)];
 }
 
+function favoritePredicate(eb: AssetExpressionBuilder, eq: boolean, viewerId?: string) {
+  if (!viewerId) {
+    return eb('asset.isFavorite', '=', eq);
+  }
+  return eq ? isFavoriteFor(viewerId) : eb.not(isFavoriteFor(viewerId));
+}
+
 // predicates are collected as expressions rather than chained `where` calls so the same
 // helpers can build each `or` branch, which must compose into eb.and/eb.or
-function branchPredicates(eb: AssetExpressionBuilder, branch: SearchFilterBranch) {
+function branchPredicates(eb: AssetExpressionBuilder, branch: SearchFilterBranch, viewerId?: string) {
   const { encodedVideoPath } = branch;
   return [
     ...comparisonPredicates(eb, 'asset.id', branch.id),
     ...comparisonPredicates(eb, 'asset.libraryId', branch.libraryId),
     ...comparisonPredicates(eb, 'asset.type', branch.type),
     ...comparisonPredicates(eb, 'asset.visibility', branch.visibility),
-    ...(branch.isFavorite ? [eb('asset.isFavorite', '=', branch.isFavorite.eq)] : []),
+    ...(branch.isFavorite ? [favoritePredicate(eb, branch.isFavorite.eq, viewerId)] : []),
     ...(branch.isOffline ? [eb('asset.isOffline', '=', branch.isOffline.eq)] : []),
     ...(branch.isMotion ? [eb('asset.livePhotoVideoId', branch.isMotion.eq ? 'is not' : 'is', null)] : []),
     ...existsPredicates(eb, branch.isEncoded, () => encodedVideoFiles(eb)),
@@ -881,13 +902,13 @@ export function searchAssetBuilder(kysely: Kysely<DB>, options: AssetSearchBuild
       )
       .$if(options.withStacked === false, (qb) => qb.where('asset.stackId', 'is', null))
       .where((eb) => {
-        const predicates = branchPredicates(eb, filter);
+        const predicates = branchPredicates(eb, filter, scope.viewingUserId);
         if (branches.length > 0) {
           predicates.push(
             eb.or(
               branches.map((branch) =>
                 eb.and([
-                  ...branchPredicates(eb, branch),
+                  ...branchPredicates(eb, branch, scope.viewingUserId),
                   ...(scopePerBranch && !isAlbumConfined(branch) ? [ownershipPredicate(eb)] : []),
                 ]),
               ),

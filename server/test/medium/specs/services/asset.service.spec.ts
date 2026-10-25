@@ -59,6 +59,22 @@ describe(AssetService.name, () => {
   });
 
   describe('shared favorites', () => {
+    it('should count shared favorites in statistics for the favoriting user', async () => {
+      const { sut, ctx } = setup();
+      const { user: owner } = await ctx.newUser();
+      const { user: member } = await ctx.newUser();
+      const { asset } = await ctx.newAsset({ ownerId: owner.id });
+      const { album } = await ctx.newAlbum({ ownerId: owner.id }, [asset.id]);
+      await ctx.newAlbumUser({ albumId: album.id, userId: member.id, role: AlbumUserRole.Viewer });
+      await ctx.get(AssetRepository).addFavorites(member.id, [asset.id]);
+
+      const memberStats = await sut.getStatistics(factory.auth({ user: member }), { isFavorite: true });
+      const ownerStats = await sut.getStatistics(factory.auth({ user: owner }), { isFavorite: true });
+
+      expect(memberStats.images).toBe(1);
+      expect(ownerStats.images).toBe(0);
+    });
+
     it('should let an album member favorite a photo they do not own without touching the asset', async () => {
       const { sut, ctx } = setup();
       const { user: owner } = await ctx.newUser();
