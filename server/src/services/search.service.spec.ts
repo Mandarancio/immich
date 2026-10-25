@@ -35,7 +35,7 @@ describe(SearchService.name, () => {
         items: [getForAsset(asset) as never],
       });
       mocks.asset.getUserStates.mockResolvedValue(
-        new Map([[asset.id, { isFavorite: true, rating: null, colorLabel: null }]]),
+        new Map([[asset.id, { isFavorite: true, rating: null, colorLabel: null, flag: null }]]),
       );
 
       const result = await sut.searchMetadata(auth, { size: 250 });
@@ -52,7 +52,7 @@ describe(SearchService.name, () => {
         items: [getForAsset(asset) as never],
       });
       mocks.asset.getUserStates.mockResolvedValue(
-        new Map([[asset.id, { isFavorite: false, rating: 4, colorLabel: AssetColorLabel.Red }]]),
+        new Map([[asset.id, { isFavorite: false, rating: 4, colorLabel: AssetColorLabel.Red, flag: null }]]),
       );
 
       const result = await sut.searchMetadata(auth, { size: 250 });

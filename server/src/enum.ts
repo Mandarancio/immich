@@ -1251,6 +1251,13 @@ export const AssetColorLabelSchema = z
   .describe('Asset color label')
   .meta({ id: 'AssetColorLabel' });
 
+export enum AssetFlag {
+  Pick = 'pick',
+  Reject = 'reject',
+}
+
+export const AssetFlagSchema = z.enum(AssetFlag).describe('Asset pick/reject flag').meta({ id: 'AssetFlag' });
+
 export enum ReleaseChannel {
   Stable = 'stable',
   ReleaseCandidate = 'releaseCandidate',

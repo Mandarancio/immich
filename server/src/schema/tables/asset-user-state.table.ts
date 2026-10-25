@@ -8,7 +8,7 @@ import {
   Timestamp,
   UpdateDateColumn,
 } from '@immich/sql-tools';
-import { AssetColorLabel } from 'src/enum.js';
+import { AssetColorLabel, AssetFlag } from 'src/enum.js';
 import { AssetTable } from 'src/schema/tables/asset.table.js';
 import { UserTable } from 'src/schema/tables/user.table.js';
 
@@ -20,6 +20,7 @@ import { UserTable } from 'src/schema/tables/user.table.js';
   name: 'asset_user_state_colorLabel_chk',
   expression: `"colorLabel" IN ('red','yellow','green','blue','purple')`,
 })
+@Check({ name: 'asset_user_state_flag_chk', expression: `"flag" IN ('pick','reject')` })
 @Table('asset_user_state')
 export class AssetUserStateTable {
   @ForeignKeyColumn(() => UserTable, { onUpdate: 'CASCADE', onDelete: 'CASCADE', primary: true, index: false })
@@ -36,6 +37,9 @@ export class AssetUserStateTable {
 
   @Column({ type: 'text', nullable: true })
   colorLabel!: AssetColorLabel | null;
+
+  @Column({ type: 'text', nullable: true })
+  flag!: AssetFlag | null;
 
   @CreateDateColumn()
   createdAt!: Generated<Timestamp>;

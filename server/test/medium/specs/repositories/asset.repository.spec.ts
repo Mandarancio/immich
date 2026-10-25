@@ -1,5 +1,5 @@
-import { Kysely } from 'kysely';
-import { AssetColorLabel, AssetFileType, AssetOrder, AssetOrderBy, AssetVisibility } from 'src/enum.js';
+import { Kysely, sql } from 'kysely';
+import { AssetColorLabel, AssetFileType, AssetFlag, AssetOrder, AssetOrderBy, AssetVisibility } from 'src/enum.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { DB } from 'src/schema/index.js';
@@ -571,6 +571,7 @@ describe(AssetRepository.name, () => {
         isFavorite: false,
         rating: 4,
         colorLabel: 'red',
+        flag: null,
       });
 
       await sut.setUserState(user.id, [asset.id], { isFavorite: true });
@@ -578,6 +579,7 @@ describe(AssetRepository.name, () => {
         isFavorite: true,
         rating: 4,
         colorLabel: 'red',
+        flag: null,
       });
 
       await sut.setUserState(user.id, [asset.id], { rating: null, colorLabel: null });
@@ -585,6 +587,7 @@ describe(AssetRepository.name, () => {
         isFavorite: true,
         rating: null,
         colorLabel: null,
+        flag: null,
       });
 
       await sut.setUserState(user.id, [asset.id], { isFavorite: false });
@@ -601,6 +604,54 @@ describe(AssetRepository.name, () => {
       expect(await sut.getUserStates(user.id, [asset.id])).toEqual(new Map());
 
       await expect(sut.setUserState(user.id, [asset.id], { rating: 6 })).rejects.toThrow();
+    });
+
+    it('setUserState stores, overwrites and clears the flag', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { asset } = await ctx.newAsset({ ownerId: user.id });
+
+      await sut.setUserState(user.id, [asset.id], { flag: AssetFlag.Pick });
+      expect(await stateOf(sut, user.id, asset.id)).toEqual({
+        isFavorite: false,
+        rating: null,
+        colorLabel: null,
+        flag: 'pick',
+      });
+
+      await sut.setUserState(user.id, [asset.id], { flag: AssetFlag.Reject });
+      expect(await stateOf(sut, user.id, asset.id)).toMatchObject({ flag: 'reject' });
+
+      // a row holding only the flag is deleted when the flag is cleared
+      await sut.setUserState(user.id, [asset.id], { flag: null });
+      expect(await sut.getUserStates(user.id, [asset.id])).toEqual(new Map());
+    });
+
+    it('setUserState keeps a row with other state when the flag is cleared', async () => {
+      const { ctx, sut } = setup();
+      const { user } = await ctx.newUser();
+      const { asset } = await ctx.newAsset({ ownerId: user.id });
+
+      await sut.setUserState(user.id, [asset.id], { isFavorite: true, flag: AssetFlag.Pick });
+      await sut.setUserState(user.id, [asset.id], { flag: null });
+      expect(await stateOf(sut, user.id, asset.id)).toEqual({
+        isFavorite: true,
+        rating: null,
+        colorLabel: null,
+        flag: null,
+      });
+    });
+
+    it('rejects an invalid flag value', async () => {
+      const { ctx } = setup();
+      const { user } = await ctx.newUser();
+      const { asset } = await ctx.newAsset({ ownerId: user.id });
+
+      await expect(
+        sql`INSERT INTO "asset_user_state" ("userId", "assetId", "flag") VALUES (${user.id}, ${asset.id}, 'maybe')`.execute(
+          ctx.database,
+        ),
+      ).rejects.toThrow(/asset_user_state_flag_chk/);
     });
   });
 
