@@ -32,6 +32,15 @@ describe('TimelineFilterBar component', () => {
     expect(screen.getByTestId('filter-star-3').getAttribute('aria-pressed')).toBe('false');
   });
 
+  it('announces each star as a minimum rating', () => {
+    render(TimelineFilterBar, { props: { filter } });
+
+    // translations are not loaded in unit tests, so the message key is returned
+    for (const star of [1, 3, 5]) {
+      expect(screen.getByTestId(`filter-star-${star}`).getAttribute('aria-label')).toBe('filter_rating_min_count');
+    }
+  });
+
   it('toggles the unrated filter', async () => {
     const user = userEvent.setup();
     render(TimelineFilterBar, { props: { filter } });
