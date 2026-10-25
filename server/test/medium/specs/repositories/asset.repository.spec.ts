@@ -3,6 +3,7 @@ import { AssetOrder, AssetOrderBy, AssetVisibility } from 'src/enum.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { DB } from 'src/schema/index.js';
+import { down, up } from 'src/schema/migrations/1793000000000-AddAssetFavoriteTable.js';
 import { BaseService } from 'src/services/base.service.js';
 import { newMediumService } from 'test/medium.factory.js';
 import { factory } from 'test/small.factory.js';
@@ -519,6 +520,52 @@ describe(AssetRepository.name, () => {
 
       await sut.removeFavorites(viewer.id, [asset.id]);
       await expect(sut.getFavoriteIds(viewer.id, [asset.id])).resolves.toEqual(new Set());
+    });
+  });
+
+  describe('asset_favorite migration', () => {
+    it('should backfill owner rows for every legacy favorite and nothing else', async () => {
+      // a dedicated database, as the table is dropped to replay the migration over pre-existing assets
+      const db = await getKyselyDB();
+      const { ctx } = setup(db);
+      const { user: userA } = await ctx.newUser();
+      const { user: userB } = await ctx.newUser();
+      const { asset: favorite } = await ctx.newAsset({ ownerId: userA.id, isFavorite: true });
+      await ctx.newAsset({ ownerId: userA.id, isFavorite: false });
+      const { asset: trashed } = await ctx.newAsset({ ownerId: userB.id, isFavorite: true, deletedAt: new Date() });
+      const { asset: archived } = await ctx.newAsset({
+        ownerId: userB.id,
+        isFavorite: true,
+        visibility: AssetVisibility.Archive,
+      });
+      await ctx.newAsset({ ownerId: userB.id, deletedAt: new Date() });
+
+      await down(db);
+      const read = () =>
+        db
+          .selectFrom('asset_favorite')
+          .select(['userId', 'assetId'])
+          .execute()
+          .then((rows) => rows.map(({ userId, assetId }) => `${userId}:${assetId}`).toSorted());
+
+      const expected = [
+        `${userA.id}:${favorite.id}`,
+        `${userB.id}:${trashed.id}`,
+        `${userB.id}:${archived.id}`,
+      ].toSorted();
+
+      await up(db);
+      await expect(read()).resolves.toEqual(expected);
+
+      // reverting and replaying must give the same result
+      await down(db);
+      await up(db);
+      await expect(read()).resolves.toEqual(expected);
+
+      // the backfill never changes the legacy column
+      await expect(db.selectFrom('asset').select('id').where('isFavorite', '=', true).execute()).resolves.toHaveLength(
+        3,
+      );
     });
   });
 

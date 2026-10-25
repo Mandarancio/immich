@@ -237,7 +237,7 @@ export const isPanorama = (asset: { projectionType: string | null; originalFileN
   return asset.projectionType === 'EQUIRECTANGULAR' || asset.originalFileName.toLowerCase().endsWith('.insp');
 };
 
-// favorites the viewer set on assets they do not own; owned assets use the asset row itself
+// favorites the viewer set on assets they do not own; owned assets use the asset column, never the mirror rows
 export const getViewerFavoriteIds = async (
   repository: Pick<AssetRepository, 'getFavoriteIds'>,
   auth: AuthDto,

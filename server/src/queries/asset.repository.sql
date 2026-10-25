@@ -411,14 +411,17 @@ with
           "asset"."ownerId" = $1
           and "asset"."isFavorite" = $2
         )
-        or exists (
-          select
-            1 as "exists"
-          from
-            "asset_favorite"
-          where
-            "asset_favorite"."assetId" = "asset"."id"
-            and "asset_favorite"."userId" = $3
+        or (
+          "asset"."ownerId" != $3
+          and exists (
+            select
+              1 as "exists"
+            from
+              "asset_favorite"
+            where
+              "asset_favorite"."assetId" = "asset"."id"
+              and "asset_favorite"."userId" = $4
+          )
         )
       ) as "isFavorite",
       asset.type = 'IMAGE' as "isImage",
@@ -462,14 +465,14 @@ with
         where
           "stacked"."stackId" = "asset"."stackId"
           and "stacked"."deletedAt" is null
-          and "stacked"."visibility" = $4
+          and "stacked"."visibility" = $5
         group by
           "stacked"."stackId"
       ) as "stacked_assets" on true
     where
       "asset"."deletedAt" is null
       and "asset"."visibility" in ('archive', 'timeline')
-      and date_trunc('MONTH', "localDateTime" AT TIME ZONE 'UTC') AT TIME ZONE 'UTC' = $5
+      and date_trunc('MONTH', "localDateTime" AT TIME ZONE 'UTC') AT TIME ZONE 'UTC' = $6
       and not exists (
         select
         from

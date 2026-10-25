@@ -1,6 +1,14 @@
 import { Kysely } from 'kysely';
 import { AssetEditAction } from 'src/dtos/editing.dto.js';
-import { AlbumUserRole, AssetFileType, AssetMetadataKey, AssetStatus, JobName, SharedLinkType } from 'src/enum.js';
+import {
+  AlbumUserRole,
+  AssetFileType,
+  AssetMetadataKey,
+  AssetStatus,
+  AssetVisibility,
+  JobName,
+  SharedLinkType,
+} from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AlbumRepository } from 'src/repositories/album.repository.js';
 import { AssetEditRepository } from 'src/repositories/asset-edit.repository.js';
@@ -15,6 +23,7 @@ import { SharedLinkRepository } from 'src/repositories/shared-link.repository.js
 import { StackRepository } from 'src/repositories/stack.repository.js';
 import { StorageRepository } from 'src/repositories/storage.repository.js';
 import { UserRepository } from 'src/repositories/user.repository.js';
+import { WebsocketRepository } from 'src/repositories/websocket.repository.js';
 import { DB } from 'src/schema/index.js';
 import { AssetService } from 'src/services/asset.service.js';
 import { newMediumService } from 'test/medium.factory.js';
@@ -36,8 +45,24 @@ const setup = (db?: Kysely<DB>) => {
       StackRepository,
       UserRepository,
     ],
-    mock: [EventRepository, LoggingRepository, JobRepository, StorageRepository, OcrRepository],
+    mock: [EventRepository, LoggingRepository, JobRepository, StorageRepository, OcrRepository, WebsocketRepository],
   });
+};
+
+const setupOwned = () => {
+  const result = setup();
+  result.ctx.getMock(WebsocketRepository).clientSend.mockReturnValue();
+  return result;
+};
+
+const readState = async (ctx: ReturnType<typeof setup>['ctx'], assetId: string, userId: string) => {
+  const row = await ctx.database
+    .selectFrom('asset')
+    .select(['isFavorite', 'updatedAt'])
+    .where('id', '=', assetId)
+    .executeTakeFirstOrThrow();
+  const mirrored = await ctx.get(AssetRepository).getFavoriteIds(userId, [assetId]);
+  return { ...row, mirrored: mirrored.has(assetId) };
 };
 
 beforeAll(async () => {
@@ -101,6 +126,111 @@ describe(AssetService.name, () => {
         .executeTakeFirstOrThrow();
       expect(row.isFavorite).toBe(false);
       expect(row.updatedAt).toEqual(before.updatedAt);
+    });
+
+    it('should count owned favorites by the column, ignoring stale owner rows', async () => {
+      const { sut, ctx } = setup();
+      const { user } = await ctx.newUser();
+      const { user: other } = await ctx.newUser();
+      const { asset: stale } = await ctx.newAsset({ ownerId: user.id, isFavorite: false });
+      await ctx.newAsset({ ownerId: user.id, isFavorite: true });
+      // the owner is also a member of an album containing the stale asset
+      const { album } = await ctx.newAlbum({ ownerId: other.id }, [stale.id]);
+      await ctx.newAlbumUser({ albumId: album.id, userId: user.id, role: AlbumUserRole.Viewer });
+      await ctx.get(AssetRepository).addFavorites(user.id, [stale.id]);
+
+      const auth = factory.auth({ user });
+      await expect(sut.getStatistics(auth, { isFavorite: true })).resolves.toMatchObject({ images: 1 });
+      await expect(sut.getStatistics(auth, { isFavorite: false })).resolves.toMatchObject({ images: 1 });
+    });
+
+    describe('owned assets', () => {
+      it('should set the column and mirror an owner row when favoriting through updateAll', async () => {
+        const { sut, ctx } = setupOwned();
+        const { user } = await ctx.newUser();
+        const { asset } = await ctx.newAsset({ ownerId: user.id });
+        const before = await readState(ctx, asset.id, user.id);
+        expect(before).toMatchObject({ isFavorite: false, mirrored: false });
+
+        await sut.updateAll(factory.auth({ user }), { ids: [asset.id], isFavorite: true });
+
+        const after = await readState(ctx, asset.id, user.id);
+        expect(after).toMatchObject({ isFavorite: true, mirrored: true });
+        expect(after.updatedAt.getTime()).toBeGreaterThan(before.updatedAt.getTime());
+      });
+
+      it('should clear the column and the owner row when unfavoriting through updateAll', async () => {
+        const { sut, ctx } = setupOwned();
+        const { user } = await ctx.newUser();
+        const { asset } = await ctx.newAsset({ ownerId: user.id, isFavorite: true });
+        await ctx.get(AssetRepository).addFavorites(user.id, [asset.id]);
+        const before = await readState(ctx, asset.id, user.id);
+
+        await sut.updateAll(factory.auth({ user }), { ids: [asset.id], isFavorite: false });
+
+        const after = await readState(ctx, asset.id, user.id);
+        expect(after).toMatchObject({ isFavorite: false, mirrored: false });
+        expect(after.updatedAt.getTime()).toBeGreaterThan(before.updatedAt.getTime());
+      });
+
+      it('should set the column and mirror an owner row when favoriting through update', async () => {
+        const { sut, ctx } = setupOwned();
+        const { user } = await ctx.newUser();
+        const { asset } = await ctx.newAsset({ ownerId: user.id });
+        await ctx.newExif({ assetId: asset.id, make: 'Canon' });
+        const before = await readState(ctx, asset.id, user.id);
+
+        await sut.update(factory.auth({ user }), asset.id, { isFavorite: true });
+        await expect(readState(ctx, asset.id, user.id)).resolves.toMatchObject({ isFavorite: true, mirrored: true });
+        const after = await readState(ctx, asset.id, user.id);
+        expect(after.updatedAt.getTime()).toBeGreaterThan(before.updatedAt.getTime());
+
+        await sut.update(factory.auth({ user }), asset.id, { isFavorite: false });
+        await expect(readState(ctx, asset.id, user.id)).resolves.toMatchObject({ isFavorite: false, mirrored: false });
+      });
+
+      it('should mirror the owner row when isFavorite is combined with other fields', async () => {
+        const { sut, ctx } = setupOwned();
+        const { user } = await ctx.newUser();
+        const { asset } = await ctx.newAsset({ ownerId: user.id });
+
+        await sut.updateAll(factory.auth({ user }), {
+          ids: [asset.id],
+          isFavorite: true,
+          visibility: AssetVisibility.Archive,
+        });
+
+        await expect(readState(ctx, asset.id, user.id)).resolves.toMatchObject({ isFavorite: true, mirrored: true });
+      });
+
+      it('should not touch the mirror when isFavorite is not part of the update', async () => {
+        const { sut, ctx } = setupOwned();
+        const { user } = await ctx.newUser();
+        const { asset } = await ctx.newAsset({ ownerId: user.id, isFavorite: true });
+
+        await sut.updateAll(factory.auth({ user }), { ids: [asset.id], visibility: AssetVisibility.Archive });
+
+        await expect(readState(ctx, asset.id, user.id)).resolves.toMatchObject({ isFavorite: true, mirrored: false });
+      });
+
+      it('should favorite owned and non-owned assets in one request', async () => {
+        const { sut, ctx } = setupOwned();
+        const { user: owner } = await ctx.newUser();
+        const { user: member } = await ctx.newUser();
+        const { asset: shared } = await ctx.newAsset({ ownerId: owner.id });
+        const { asset: own } = await ctx.newAsset({ ownerId: member.id });
+        const { album } = await ctx.newAlbum({ ownerId: owner.id }, [shared.id]);
+        await ctx.newAlbumUser({ albumId: album.id, userId: member.id, role: AlbumUserRole.Viewer });
+
+        await sut.updateAll(factory.auth({ user: member }), { ids: [shared.id, own.id], isFavorite: true });
+
+        await expect(readState(ctx, own.id, member.id)).resolves.toMatchObject({ isFavorite: true, mirrored: true });
+        await expect(readState(ctx, shared.id, member.id)).resolves.toMatchObject({
+          isFavorite: false,
+          mirrored: true,
+        });
+        await expect(readState(ctx, shared.id, owner.id)).resolves.toMatchObject({ mirrored: false });
+      });
     });
 
     it('should reject favoriting a photo the user cannot read', async () => {

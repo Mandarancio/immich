@@ -127,6 +127,10 @@ export class AssetService extends BaseService {
 
     const asset = await this.assetRepository.update({ id, ...rest });
 
+    if (asset && rest.isFavorite !== undefined) {
+      await this.mirrorOwnedFavorites(auth, [id], rest.isFavorite);
+    }
+
     if (previousMotion && asset) {
       await onAfterUnlink(repos, {
         userId: auth.user.id,
@@ -201,6 +205,10 @@ export class AssetService extends BaseService {
 
     if (Object.keys(assetDto).length > 0) {
       await this.assetRepository.updateAll(ids, assetDto);
+    }
+
+    if (isFavorite !== undefined) {
+      await this.mirrorOwnedFavorites(auth, ids, isFavorite);
     }
 
     if (visibility === AssetVisibility.Locked) {
@@ -652,6 +660,14 @@ export class AssetService extends BaseService {
       return false;
     }
     return Object.entries(dto).every(([key, value]) => key === 'ids' || key === 'isFavorite' || value === undefined);
+  }
+
+  // the asset column stays authoritative for owned assets (legacy clients and sync read it), so the owner row in
+  // asset_favorite is only a mirror of the change that was just written to the column
+  private async mirrorOwnedFavorites(auth: AuthDto, ownedIds: string[], isFavorite: boolean): Promise<void> {
+    await (isFavorite
+      ? this.assetRepository.addFavorites(auth.user.id, ownedIds)
+      : this.assetRepository.removeFavorites(auth.user.id, ownedIds));
   }
 
   // writes shared favorites for the non-owned ids and returns the owned ids

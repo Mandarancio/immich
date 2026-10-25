@@ -32,6 +32,18 @@ const setupSharedAlbum = async (ctx: ReturnType<typeof setup>['ctx']) => {
   return { owner, member, asset, album };
 };
 
+const readBucket = async (
+  sut: ReturnType<typeof setup>['sut'],
+  user: { id: string },
+  options: Parameters<ReturnType<typeof setup>['sut']['getTimeBuckets']>[1] = {},
+) => {
+  const auth = factory.auth({ user });
+  const buckets = await sut.getTimeBuckets(auth, options);
+  return Promise.all(
+    buckets.map(async ({ timeBucket }) => JSON.parse(await sut.getTimeBucket(auth, { ...options, timeBucket }))),
+  );
+};
+
 beforeAll(async () => {
   defaultDatabase = await getKyselyDB();
 });
@@ -396,6 +408,52 @@ describe(TimelineService.name, () => {
 
       await expect(sut.getTimeBuckets(factory.auth({ user }), { isFavorite: true })).resolves.toHaveLength(1);
       await expect(sut.getTimeBuckets(factory.auth({ user }), { isFavorite: false })).resolves.toHaveLength(0);
+    });
+
+    describe('owner rows are only a mirror of the column', () => {
+      it('should not treat a stale owner row as favorite when the column is false', async () => {
+        const { sut, ctx } = setup();
+        const { user } = await ctx.newUser();
+        const { asset } = await ctx.newAsset({ ownerId: user.id, isFavorite: false });
+        await ctx.newExif({ assetId: asset.id, make: 'Canon' });
+        await ctx.get(AssetRepository).addFavorites(user.id, [asset.id]);
+
+        const auth = factory.auth({ user });
+        await expect(sut.getTimeBuckets(auth, { isFavorite: true })).resolves.toHaveLength(0);
+        await expect(sut.getTimeBuckets(auth, { isFavorite: false })).resolves.toHaveLength(1);
+        const [bucket] = await readBucket(sut, user);
+        expect(bucket.id).toEqual([asset.id]);
+        expect(bucket.isFavorite).toEqual([false]);
+        const hidden = await readBucket(sut, user, { isFavorite: true });
+        expect(hidden).toEqual([]);
+      });
+
+      it('should keep an owned asset favorite when the column is true and there is no owner row', async () => {
+        const { sut, ctx } = setup();
+        const { user } = await ctx.newUser();
+        const { asset } = await ctx.newAsset({ ownerId: user.id, isFavorite: true });
+        await ctx.newExif({ assetId: asset.id, make: 'Canon' });
+
+        const auth = factory.auth({ user });
+        await expect(sut.getTimeBuckets(auth, { isFavorite: true })).resolves.toHaveLength(1);
+        await expect(sut.getTimeBuckets(auth, { isFavorite: false })).resolves.toHaveLength(0);
+        const [bucket] = await readBucket(sut, user);
+        expect(bucket.isFavorite).toEqual([true]);
+      });
+
+      it('should not list a stale owner row through the shared favorites path of a shared album', async () => {
+        const { sut, ctx } = setup();
+        const { user: owner } = await ctx.newUser();
+        const { user: other } = await ctx.newUser();
+        const { asset } = await ctx.newAsset({ ownerId: owner.id, isFavorite: false });
+        await ctx.newExif({ assetId: asset.id, make: 'Canon' });
+        // the owner is a member of another user's album that contains their own asset
+        const { album } = await ctx.newAlbum({ ownerId: other.id }, [asset.id]);
+        await ctx.newAlbumUser({ albumId: album.id, userId: owner.id, role: AlbumUserRole.Viewer });
+        await ctx.get(AssetRepository).addFavorites(owner.id, [asset.id]);
+
+        await expect(sut.getTimeBuckets(factory.auth({ user: owner }), { isFavorite: true })).resolves.toHaveLength(0);
+      });
     });
   });
 
