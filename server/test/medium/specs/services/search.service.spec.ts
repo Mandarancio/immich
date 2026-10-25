@@ -87,6 +87,50 @@ const setupShared = async () => {
   };
 };
 
+const setupLiked = async () => {
+  const { sut, ctx } = setup();
+  const { user: owner } = await ctx.newUser();
+  const { user: member } = await ctx.newUser();
+  const { user: outsider } = await ctx.newUser();
+  const { asset: likedByMember } = await ctx.newAsset({ ownerId: owner.id });
+  const { asset: likedByOwner } = await ctx.newAsset({ ownerId: owner.id });
+  const { asset: plain } = await ctx.newAsset({ ownerId: owner.id });
+  // owned by the viewer, but only liked in an album the viewer is not part of
+  const { asset: foreignLike } = await ctx.newAsset({ ownerId: owner.id });
+  const { album } = await ctx.newAlbum({ ownerId: owner.id }, [likedByMember.id, likedByOwner.id, plain.id]);
+  await ctx.newAlbumUser({ albumId: album.id, userId: member.id, role: AlbumUserRole.Viewer });
+  const { album: foreignAlbum } = await ctx.newAlbum({ ownerId: outsider.id }, [foreignLike.id]);
+
+  const like = (userId: string, albumId: string, assetId: string) =>
+    ctx.database.insertInto('activity').values({ userId, albumId, assetId, isLiked: true }).execute();
+  await like(member.id, album.id, likedByMember.id);
+  await like(owner.id, album.id, likedByOwner.id);
+  await like(outsider.id, foreignAlbum.id, foreignLike.id);
+
+  const { id: sharedLinkId } = await ctx.get(SharedLinkRepository).create({
+    allowUpload: false,
+    key: Buffer.from(`liked-${member.id}`),
+    type: SharedLinkType.Album,
+    userId: member.id,
+    albumId: album.id,
+  });
+
+  return {
+    sut,
+    owner: factory.auth({ user: owner }),
+    member: factory.auth({ user: member }),
+    outsider: factory.auth({ user: outsider }),
+    link: factory.auth({ user: member, sharedLink: { id: sharedLinkId, showExif: true } }),
+    album,
+    likedByMember,
+    likedByOwner,
+    plain,
+    foreignLike,
+  };
+};
+
+const sorted = (values: string[]) => values.toSorted();
+
 const ids = (response: { assets: { items: Array<{ id: string }> } }) => response.assets.items.map(({ id }) => id);
 
 const searchIds = async (sut: SearchService, auth: AuthDto, dto: MetadataSearchDto) =>
@@ -434,6 +478,133 @@ describe(SearchService.name, () => {
           },
         });
         expect(ids(response)).toEqual([asset.id]);
+      });
+    });
+  });
+
+  describe('liked filters', () => {
+    describe('legacy', () => {
+      it('should find assets liked by any user in an accessible album', async () => {
+        const { sut, owner, member, album, likedByMember, likedByOwner, plain } = await setupLiked();
+        const search = (auth: AuthDto, isLiked: boolean) =>
+          searchIds(sut, auth, { size: 250, albumIds: [album.id], isLiked });
+
+        expect(sorted(await search(owner, true))).toEqual(sorted([likedByMember.id, likedByOwner.id]));
+        expect(await search(owner, false)).toEqual([plain.id]);
+        expect(sorted(await search(member, true))).toEqual(sorted([likedByMember.id, likedByOwner.id]));
+      });
+
+      it('should find assets liked by the viewer only', async () => {
+        const { sut, owner, member, album, likedByMember, likedByOwner, plain } = await setupLiked();
+        const search = (auth: AuthDto, isLikedByMe: boolean) =>
+          searchIds(sut, auth, { size: 250, albumIds: [album.id], isLikedByMe });
+
+        expect(await search(owner, true)).toEqual([likedByOwner.id]);
+        expect(sorted(await search(owner, false))).toEqual(sorted([likedByMember.id, plain.id]));
+        expect(await search(member, true)).toEqual([likedByMember.id]);
+        expect(sorted(await search(member, false))).toEqual(sorted([likedByOwner.id, plain.id]));
+      });
+
+      it('should combine isLiked and isLikedByMe', async () => {
+        const { sut, owner, album, likedByMember } = await setupLiked();
+        const result = await searchIds(sut, owner, {
+          size: 250,
+          albumIds: [album.id],
+          isLiked: true,
+          isLikedByMe: false,
+        });
+        expect(result).toEqual([likedByMember.id]);
+      });
+
+      it('should not count a like in an album the viewer cannot access', async () => {
+        const { sut, owner, likedByMember, likedByOwner, plain, foreignLike } = await setupLiked();
+        const liked = await searchIds(sut, owner, { size: 250, isLiked: true });
+        expect(sorted(liked)).toEqual(sorted([likedByMember.id, likedByOwner.id]));
+        expect(liked).not.toContain(foreignLike.id);
+
+        const notLiked = await searchIds(sut, owner, { size: 250, isLiked: false });
+        expect(sorted(notLiked)).toEqual(sorted([plain.id, foreignLike.id]));
+      });
+
+      it('should not count a like in a deleted album', async () => {
+        const { sut, ctx } = setup();
+        const { user } = await ctx.newUser();
+        const { asset } = await ctx.newAsset({ ownerId: user.id });
+        const { album } = await ctx.newAlbum({ ownerId: user.id }, [asset.id]);
+        await ctx.database
+          .insertInto('activity')
+          .values({ userId: user.id, albumId: album.id, assetId: asset.id, isLiked: true })
+          .execute();
+        const auth = factory.auth({ user });
+        expect(await searchIds(sut, auth, { size: 250, isLiked: true })).toEqual([asset.id]);
+
+        await ctx.softDeleteAlbum(album.id);
+        expect(await searchIds(sut, auth, { size: 250, isLiked: true })).toEqual([]);
+      });
+
+      it('should not evaluate the likes of the link creator through a shared link', async () => {
+        const { sut, link, album, likedByMember, likedByOwner, plain } = await setupLiked();
+        const base = { size: 250, albumIds: [album.id] };
+        const all = sorted([likedByMember.id, likedByOwner.id, plain.id]);
+
+        expect(await searchIds(sut, link, { ...base, isLiked: true })).toEqual([]);
+        expect(await searchIds(sut, link, { ...base, isLikedByMe: true })).toEqual([]);
+        expect(sorted(await searchIds(sut, link, { ...base, isLiked: false }))).toEqual(all);
+        expect(sorted(await searchIds(sut, link, { ...base, isLikedByMe: false }))).toEqual(all);
+      });
+    });
+
+    describe('new shape', () => {
+      it('should filter by isLiked and isLikedByMe', async () => {
+        const { sut, owner, member, album, likedByMember, likedByOwner, plain } = await setupLiked();
+        const albumIds = { any: [album.id] };
+        const search = (auth: AuthDto, filter: object) =>
+          searchIds(sut, auth, { size: 250, filter: { albumIds, ...filter } });
+
+        expect(sorted(await search(owner, { isLiked: { eq: true } }))).toEqual(
+          sorted([likedByMember.id, likedByOwner.id]),
+        );
+        expect(await search(owner, { isLiked: { eq: false } })).toEqual([plain.id]);
+        expect(await search(owner, { isLikedByMe: { eq: true } })).toEqual([likedByOwner.id]);
+        expect(await search(member, { isLikedByMe: { eq: true } })).toEqual([likedByMember.id]);
+        expect(sorted(await search(member, { isLikedByMe: { eq: false } }))).toEqual(
+          sorted([likedByOwner.id, plain.id]),
+        );
+      });
+
+      it('should apply the liked filters inside an or branch', async () => {
+        const { sut, owner, album, likedByMember, likedByOwner } = await setupLiked();
+        const filter = { albumIds: { any: [album.id] } };
+        expect(
+          await searchIds(sut, owner, { size: 250, filter: { ...filter, or: [{ isLikedByMe: { eq: true } }] } }),
+        ).toEqual([likedByOwner.id]);
+        expect(
+          await searchIds(sut, owner, {
+            size: 250,
+            filter: { ...filter, or: [{ isLiked: { eq: true }, isLikedByMe: { eq: false } }] },
+          }),
+        ).toEqual([likedByMember.id]);
+      });
+
+      it('should not count a like in an album the viewer cannot access', async () => {
+        const { sut, owner, foreignLike } = await setupLiked();
+        const liked = await searchIds(sut, owner, { size: 250, filter: { isLiked: { eq: true } } });
+        expect(liked).not.toContain(foreignLike.id);
+        const notLiked = await searchIds(sut, owner, { size: 250, filter: { isLiked: { eq: false } } });
+        expect(notLiked).toContain(foreignLike.id);
+      });
+
+      it('should not evaluate the likes of the link creator through a shared link', async () => {
+        const { sut, link, album, likedByMember, likedByOwner, plain } = await setupLiked();
+        const albumIds = { any: [album.id] };
+        const search = (filter: object) => searchIds(sut, link, { size: 250, filter: { albumIds, ...filter } });
+        const all = sorted([likedByMember.id, likedByOwner.id, plain.id]);
+
+        expect(await search({ isLiked: { eq: true } })).toEqual([]);
+        expect(await search({ isLikedByMe: { eq: true } })).toEqual([]);
+        expect(sorted(await search({ isLiked: { eq: false } }))).toEqual(all);
+        expect(sorted(await search({ isLikedByMe: { eq: false } }))).toEqual(all);
+        expect(await search({ or: [{ isLikedByMe: { eq: true } }] })).toEqual([]);
       });
     });
   });
