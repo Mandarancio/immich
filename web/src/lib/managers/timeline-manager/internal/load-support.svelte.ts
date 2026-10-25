@@ -4,6 +4,7 @@ import { toISOYearMonthUTC } from '$lib/utils/timeline-util';
 import { TimelineManager } from '../timeline-manager.svelte';
 import type { TimelineMonth } from '../timeline-month.svelte';
 import type { TimelineManagerOptions } from '../types';
+import { toBucketRequestParams } from './utils.svelte';
 
 export async function loadFromTimeBuckets(
   timelineManager: TimelineManager,
@@ -19,7 +20,7 @@ export async function loadFromTimeBuckets(
   const bucketResponse = await getTimeBucket(
     {
       ...authManager.params,
-      ...options,
+      ...toBucketRequestParams(options),
       timeBucket,
     },
     { signal },

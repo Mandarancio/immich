@@ -4,6 +4,7 @@ import { SvelteDate, SvelteSet } from 'svelte/reactivity';
 import { VirtualScrollManager } from '$lib/managers/VirtualScrollManager/VirtualScrollManager.svelte';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import { eventManager } from '$lib/managers/event-manager.svelte';
+import type { TimelineFilter } from '$lib/managers/timeline-filter-manager.svelte';
 import { GroupInsertionCache } from '$lib/managers/timeline-manager/group-insertion-cache.svelte';
 import { updateTimelineMonthViewportProximity } from '$lib/managers/timeline-manager/internal/intersection-support.svelte';
 import { updateGeometry } from '$lib/managers/timeline-manager/internal/layout-support.svelte';
@@ -28,7 +29,7 @@ import {
   type TimelineDateTime,
   type TimelineYearMonth,
 } from '$lib/utils/timeline-util';
-import { isMismatched, updateObject } from './internal/utils.svelte';
+import { isMismatched, matchesFilter, toBucketRequestParams, updateObject } from './internal/utils.svelte';
 import { TimelineDay } from './timeline-day.svelte';
 import { TimelineMonth } from './timeline-month.svelte';
 import type {
@@ -93,9 +94,16 @@ export class TimelineManager extends VirtualScrollManager {
   static #INIT_OPTIONS = {};
   #websocketSupport: WebsocketSupport | undefined;
   #options: TimelineManagerOptions = TimelineManager.#INIT_OPTIONS;
+  #filter: TimelineFilter | undefined;
   #updatingViewportProximities = false;
   #scrollableElement: HTMLElement | undefined = $state();
   #unsubscribes: Array<() => void> = [];
+
+  get #effectiveFilter(): TimelineFilter | undefined {
+    const filter = this.#options.filter;
+    // a page-level isFavorite option wins over the filter's favorite toggle
+    return filter && this.#options.isFavorite !== undefined ? { ...filter, isFavorite: undefined } : filter;
+  }
 
   get showAssetOwners() {
     return userPreferencesManager.showAssetOwners;
@@ -287,7 +295,7 @@ export class TimelineManager extends VirtualScrollManager {
   async #initializeTimelineMonths() {
     const timebuckets = await getTimeBuckets({
       ...authManager.params,
-      ...this.#options,
+      ...toBucketRequestParams(this.#options),
     });
 
     this.months = timebuckets.map((timeBucket) => {
@@ -305,10 +313,22 @@ export class TimelineManager extends VirtualScrollManager {
     this.updateViewportGeometry(false);
   }
 
-  async updateOptions(options: TimelineManagerOptions) {
-    if (options.deferInit) {
+  async setFilter(filter: TimelineFilter) {
+    this.#filter = filter;
+    if (this.#options === TimelineManager.#INIT_OPTIONS) {
+      // not initialized yet: the first updateOptions picks the filter up
       return;
     }
+    await this.updateOptions({ ...this.#options, filter });
+  }
+
+  async updateOptions(newOptions: TimelineManagerOptions) {
+    if (newOptions.deferInit) {
+      return;
+    }
+    // the filter is owned by setFilter; keep it unless the caller explicitly provides one
+    this.#filter = newOptions.filter ?? this.#filter;
+    const options = this.#filter === undefined ? newOptions : { ...newOptions, filter: this.#filter };
     if (this.#options !== TimelineManager.#INIT_OPTIONS && isEqual(this.#options, options)) {
       return;
     }
@@ -654,6 +674,7 @@ export class TimelineManager extends VirtualScrollManager {
       isMismatched(this.#options.visibility, asset.visibility) ||
       isMismatched(this.#options.isFavorite, asset.isFavorite) ||
       isMismatched(this.#options.isTrashed, asset.isTrashed) ||
+      !matchesFilter(this.#effectiveFilter, asset) ||
       (this.#options.tagId && asset.tags && !asset.tags.includes(this.#options.tagId)) ||
       (this.#options.assetFilter !== undefined && !this.#options.assetFilter.has(asset.id))
     );

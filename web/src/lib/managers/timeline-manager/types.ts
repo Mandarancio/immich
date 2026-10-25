@@ -1,4 +1,5 @@
-import type { AssetStackResponseDto, AssetVisibility } from '@immich/sdk';
+import type { AssetColorLabel, AssetStackResponseDto, AssetVisibility } from '@immich/sdk';
+import type { TimelineFilter } from '$lib/managers/timeline-filter-manager.svelte';
 import type { TimelineDate, TimelineDateTime, TimelineYearMonth } from '$lib/utils/timeline-util';
 
 export type ViewportTopMonth = TimelineYearMonth | undefined | 'lead-in' | 'lead-out';
@@ -9,6 +10,7 @@ export type TimelineManagerOptions = Omit<AssetApiGetTimeBucketsRequest, 'size'>
   timelineAlbumId?: string;
   deferInit?: boolean;
   assetFilter?: Set<string>;
+  filter?: TimelineFilter;
 };
 
 export type AssetDescriptor = { id: string };
@@ -26,6 +28,8 @@ export type TimelineAsset = {
   fileCreatedAt: TimelineDateTime;
   visibility: AssetVisibility;
   isFavorite: boolean;
+  rating: number | null;
+  colorLabel: AssetColorLabel | null;
   isTrashed: boolean;
   isVideo: boolean;
   isImage: boolean;
