@@ -205,6 +205,53 @@ describe('CompareView', () => {
       expect(underneath).not.toHaveBeenCalled();
     });
 
+    describe('auto-repeat', () => {
+      it.each([
+        ['k', 'toggleFlag', AssetFlag.Pick],
+        ['r', 'toggleFlag', AssetFlag.Reject],
+        ['u', 'setFlag', null],
+        ['3', 'rate', 3],
+        ['7', 'toggleColor', AssetColorLabel.Yellow],
+        ['Backspace', 'remove'],
+        ['z', 'toggleActualSize'],
+      ] as const)('%s ignores repeats but handles the first press', async (key, method, ...args) => {
+        const spy = vi.spyOn(compareManager, method as 'toggleFlag');
+
+        const repeated = await press(key, { repeat: true });
+        expect(spy).not.toHaveBeenCalled();
+        expect(repeated.defaultPrevented).toBe(true);
+
+        const first = await press(key, { repeat: false });
+        expect(spy).toHaveBeenCalledTimes(1);
+        if (args.length > 0) {
+          expect(spy).toHaveBeenCalledWith(...(args as [AssetFlag]));
+        }
+        expect(first.defaultPrevented).toBe(true);
+      });
+
+      it.each(['ArrowRight', 'ArrowDown'])('%s keeps moving focus while held', async (key) => {
+        const spy = vi.spyOn(compareManager, 'focusNext');
+
+        await press(key, { repeat: true });
+
+        expect(spy).toHaveBeenCalledTimes(1);
+      });
+
+      it.each(['ArrowLeft', 'ArrowUp'])('%s keeps moving focus backwards while held', async (key) => {
+        const spy = vi.spyOn(compareManager, 'focusPrevious');
+
+        await press(key, { repeat: true });
+
+        expect(spy).toHaveBeenCalledTimes(1);
+      });
+
+      it('does not preventDefault repeats of unhandled keys', async () => {
+        const event = await press('x', { repeat: true });
+
+        expect(event.defaultPrevented).toBe(false);
+      });
+    });
+
     it('does not handle shortcuts with modifiers', async () => {
       await press('k', { ctrlKey: true });
       await press('z', { metaKey: true });

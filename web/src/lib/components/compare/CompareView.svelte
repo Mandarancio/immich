@@ -12,7 +12,7 @@
   import { mdiClose } from '@mdi/js';
   import { t } from 'svelte-i18n';
 
-  type Binding = { shortcut: Shortcut; run: () => void };
+  type Binding = { shortcut: Shortcut; run: () => void; repeatable?: boolean };
 
   const ratingsEnabled = () => authManager.authenticated && authManager.preferences.ratings.enabled;
 
@@ -26,10 +26,10 @@
     }));
 
   const bindings: Binding[] = [
-    { shortcut: { key: 'ArrowRight' }, run: () => compareManager.focusNext() },
-    { shortcut: { key: 'ArrowDown' }, run: () => compareManager.focusNext() },
-    { shortcut: { key: 'ArrowLeft' }, run: () => compareManager.focusPrevious() },
-    { shortcut: { key: 'ArrowUp' }, run: () => compareManager.focusPrevious() },
+    { shortcut: { key: 'ArrowRight' }, run: () => compareManager.focusNext(), repeatable: true },
+    { shortcut: { key: 'ArrowDown' }, run: () => compareManager.focusNext(), repeatable: true },
+    { shortcut: { key: 'ArrowLeft' }, run: () => compareManager.focusPrevious(), repeatable: true },
+    { shortcut: { key: 'ArrowUp' }, run: () => compareManager.focusPrevious(), repeatable: true },
     {
       shortcut: { key: flagShortcut[AssetFlag.Pick] },
       run: () => handlePromiseError(compareManager.toggleFlag(AssetFlag.Pick)),
@@ -108,6 +108,10 @@
       const binding = bindings.find(({ shortcut }) => matchesShortcut(event, shortcut));
       if (binding) {
         event.preventDefault();
+        // Holding a key must not fire the write actions repeatedly (only moving the focus repeats).
+        if (event.repeat && !binding.repeatable) {
+          return;
+        }
         binding.run();
       }
     };
