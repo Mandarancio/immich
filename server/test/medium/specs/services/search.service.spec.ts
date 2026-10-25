@@ -1,7 +1,14 @@
 import { Kysely } from 'kysely';
 import { AuthDto } from 'src/dtos/auth.dto.js';
 import { MetadataSearchDto, SearchSuggestionType } from 'src/dtos/search.dto.js';
-import { AlbumUserRole, AssetColorLabel, AssetOrder, AssetVisibility, SearchOrderField } from 'src/enum.js';
+import {
+  AlbumUserRole,
+  AssetColorLabel,
+  AssetOrder,
+  AssetVisibility,
+  SearchOrderField,
+  SharedLinkType,
+} from 'src/enum.js';
 import { AccessRepository } from 'src/repositories/access.repository.js';
 import { AssetRepository } from 'src/repositories/asset.repository.js';
 import { DatabaseRepository } from 'src/repositories/database.repository.js';
@@ -9,6 +16,7 @@ import { LoggingRepository } from 'src/repositories/logging.repository.js';
 import { PartnerRepository } from 'src/repositories/partner.repository.js';
 import { PersonRepository } from 'src/repositories/person.repository.js';
 import { SearchRepository } from 'src/repositories/search.repository.js';
+import { SharedLinkRepository } from 'src/repositories/shared-link.repository.js';
 import { DB } from 'src/schema/index.js';
 import { SearchService } from 'src/services/search.service.js';
 import { newMediumService } from 'test/medium.factory.js';
@@ -29,6 +37,7 @@ const setup = (db?: Kysely<DB>) => {
       SearchRepository,
       PartnerRepository,
       PersonRepository,
+      SharedLinkRepository,
     ],
     mock: [LoggingRepository],
   });
@@ -53,7 +62,24 @@ const setupShared = async () => {
   const assets = ctx.get(AssetRepository);
   await assets.setUserState(member.id, [asset.id], { rating: 4, colorLabel: AssetColorLabel.Red });
   await assets.setUserState(owner.id, [asset.id], { colorLabel: AssetColorLabel.Blue });
-  return { sut, owner: factory.auth({ user: owner }), member: factory.auth({ user: member }), asset, plain, album };
+  // an album shared link created by the member, who has a personal rating and color on `asset`
+  const { id: sharedLinkId } = await ctx.get(SharedLinkRepository).create({
+    allowUpload: false,
+    key: Buffer.from(`search-${member.id}`),
+    type: SharedLinkType.Album,
+    userId: member.id,
+    albumId: album.id,
+  });
+  const link = factory.auth({ user: member, sharedLink: { id: sharedLinkId, showExif: true } });
+  return {
+    sut,
+    owner: factory.auth({ user: owner }),
+    member: factory.auth({ user: member }),
+    link,
+    asset,
+    plain,
+    album,
+  };
 };
 
 const ids = (response: { assets: { items: Array<{ id: string }> } }) => response.assets.items.map(({ id }) => id);
@@ -250,6 +276,17 @@ describe(SearchService.name, () => {
         const both = await search(member, ['none', AssetColorLabel.Red]);
         expect(both.sort()).toEqual([asset.id, plain.id].sort());
       });
+
+      it('should not leak the personal rating and color of the link creator through a shared link', async () => {
+        const { sut, link, asset, plain, album } = await setupShared();
+        const base = { size: 250, albumIds: [album.id] };
+        // the creator rated `asset` 4 and labeled it red; the shared link only sees the exif rating (1)
+        expect(await searchIds(sut, link, { ...base, rating: 4 })).toEqual([]);
+        expect(await searchIds(sut, link, { ...base, rating: 1 })).toEqual([asset.id]);
+        expect(await searchIds(sut, link, { ...base, colorLabels: [AssetColorLabel.Red] })).toEqual([]);
+        const none = await searchIds(sut, link, { ...base, colorLabels: ['none'] });
+        expect(none.sort()).toEqual([asset.id, plain.id].sort());
+      });
     });
 
     describe('new shape', () => {
@@ -280,6 +317,18 @@ describe(SearchService.name, () => {
         expect(await search(owner, [AssetColorLabel.Red])).toEqual([]);
         expect(await search(owner, [AssetColorLabel.Blue])).toEqual([asset.id]);
         expect(await search(member, ['none'])).toEqual([plain.id]);
+      });
+
+      it('should not leak the personal rating and color of the link creator through a shared link', async () => {
+        const { sut, link, asset, plain, album } = await setupShared();
+        const albumIds = { any: [album.id] };
+        const search = (filter: object) => searchIds(sut, link, { size: 250, filter: { albumIds, ...filter } });
+        expect(await search({ rating: { eq: 4 } })).toEqual([]);
+        expect(await search({ rating: { eq: 1 } })).toEqual([asset.id]);
+        expect(await search({ colorLabels: [AssetColorLabel.Red] })).toEqual([]);
+        const none = await search({ colorLabels: ['none'] });
+        expect(none.sort()).toEqual([asset.id, plain.id].sort());
+        expect(await search({ or: [{ colorLabels: [AssetColorLabel.Red] }] })).toEqual([]);
       });
 
       it('should apply colorLabels inside an or branch', async () => {
