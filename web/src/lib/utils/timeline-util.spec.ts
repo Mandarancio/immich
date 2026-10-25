@@ -1,7 +1,9 @@
+import { AssetColorLabel } from '@immich/sdk';
 import { DateTime } from 'luxon';
 import { locale } from '$lib/stores/preferences.store';
 import { parseUtcDate } from '$lib/utils/date-time';
-import { formatGroupTitle, toISOYearMonthUTC } from '$lib/utils/timeline-util';
+import { formatGroupTitle, toISOYearMonthUTC, toTimelineAsset } from '$lib/utils/timeline-util';
+import { assetFactory } from '@test-data/factories/asset-factory';
 
 describe('formatGroupTitle', () => {
   beforeAll(() => {
@@ -95,5 +97,21 @@ describe('toISOYearMonthUTC', () => {
 
   it('should prefix month with 0s', () => {
     expect(toISOYearMonthUTC({ year: 2025, month: 1 })).toBe('2025-01-01T00:00:00.000Z');
+  });
+});
+
+describe('toTimelineAsset', () => {
+  it('maps rating from exifInfo and colorLabel', () => {
+    const asset = assetFactory.build({ exifInfo: { rating: 4 }, colorLabel: AssetColorLabel.Red });
+    expect(toTimelineAsset(asset)).toMatchObject({ rating: 4, colorLabel: AssetColorLabel.Red });
+  });
+
+  it('maps a missing rating and colorLabel to null', () => {
+    const asset = assetFactory.build({ exifInfo: {}, colorLabel: undefined });
+    expect(toTimelineAsset(asset)).toMatchObject({ rating: null, colorLabel: null });
+    expect(toTimelineAsset(assetFactory.build({ exifInfo: undefined }))).toMatchObject({
+      rating: null,
+      colorLabel: null,
+    });
   });
 });
