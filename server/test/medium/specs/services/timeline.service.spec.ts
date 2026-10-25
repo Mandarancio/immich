@@ -398,6 +398,32 @@ describe(TimelineService.name, () => {
       expect(response.isFavorite).toEqual([false]);
     });
 
+    it('should not filter shared link buckets by the link creator personal favorites', async () => {
+      const { sut, ctx } = setup();
+      const { member, asset, album } = await setupSharedAlbum(ctx);
+      await ctx.get(AssetRepository).addFavorites(member.id, [asset.id]);
+      const { id: sharedLinkId } = await ctx.get(SharedLinkRepository).create({
+        allowUpload: false,
+        key: Buffer.from('favorites-filter-link'),
+        type: SharedLinkType.Album,
+        userId: member.id,
+        albumId: album.id,
+      });
+      const auth = factory.auth({ user: member, sharedLink: { id: sharedLinkId, showExif: true } });
+      const [{ timeBucket: bucket }] = await sut.getTimeBuckets(auth, { albumId: album.id });
+
+      await expect(sut.getTimeBuckets(auth, { albumId: album.id, isFavorite: true })).resolves.toHaveLength(0);
+      await expect(sut.getTimeBuckets(auth, { albumId: album.id, isFavorite: false })).resolves.toHaveLength(1);
+      const hidden = JSON.parse(
+        await sut.getTimeBucket(auth, { albumId: album.id, timeBucket: bucket, isFavorite: true }),
+      );
+      expect(hidden.id).toEqual([]);
+      const visible = JSON.parse(
+        await sut.getTimeBucket(auth, { albumId: album.id, timeBucket: bucket, isFavorite: false }),
+      );
+      expect(visible.id).toEqual([asset.id]);
+    });
+
     it('should keep the owner favorite behaviour unchanged', async () => {
       const { sut, ctx } = setup();
       const { user } = await ctx.newUser();
