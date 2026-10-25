@@ -11,7 +11,7 @@ Builds on the per-user state work (`2026-10-25-per-user-rating-color-filters-des
 - Reject is a **flag only**: rejected photos stay in the timeline (dimmed, with an X badge) and are filterable. There is no dedicated "review and trash rejected" step; the user filters to Rejected, selects all and uses the normal trash flow.
 - The flag is table-only for everyone, owners included (no legacy field), like `colorLabel`.
 - Compare is a **full-screen overlay** (no route), opened from a timeline/album/search selection of 2 to 6 photos.
-- Inside compare, `X` rejects the focused photo and by default **removes it from the view** (remaining photos re-tile larger). A local setting switches this to "keep dimmed" (focus moves to the next non-rejected photo).
+- Inside compare, `R` rejects the focused photo and by default **removes it from the view** (remaining photos re-tile larger). A local setting switches this to "keep dimmed" (focus moves to the next non-rejected photo).
 - Compare loads the preview first and the original on zoom.
 - No new server preference: the reject-behavior setting is a browser-local persisted store (`preferences.store.ts`), like `alwaysLoadOriginalFile`.
 
@@ -43,7 +43,7 @@ New enum `AssetFlag { Pick = 'pick', Reject = 'reject' }` in `server/src/enum.ts
 
 - `TimelineFilterManager` gets `flags` (same shape and URL/state handling as `colorLabels`); the filter bar gets a Flag chip group: Picked / Rejected / Unflagged.
 - Thumbnails: a pick badge; rejected photos are dimmed with an X badge. Place the badge in the existing bottom-left overlay stack without colliding with the favorite/rating/color/archive indicators.
-- `P` picks, `X` rejects, `U` clears for the selection (or hovered/viewed asset), in timelines and the asset viewer. Pressing `P` on an already picked photo (or `X` on a rejected one) toggles it off. Conflict check: no existing plain `p`/`x`/`u`/`c` shortcut was found (`z` in the viewer and shift-`c` in the duplicates page exist elsewhere); re-verify during implementation. `ShortcutsModal` lists the new keys (and the missing `6`-`9` color keys).
+- `K` picks (keep), `R` rejects, `U` clears for the selection (or hovered/viewed asset), in timelines, the asset viewer and the compare view. Pressing `K` on an already picked photo (or `R` on a rejected one) toggles it off. Lightroom's `P`/`X` are NOT used: plain `x` already selects a focused thumbnail and plain `p` is Tag people in the viewer. `k`, `r`, `u` and `c` have no plain-key binding on timeline, viewer or search pages (`r` is only used on admin library pages; shift-`c`/shift-`u` and ctrl-`k` exist elsewhere). `ShortcutsModal` lists the new keys (and the missing `6`-`9` color keys).
 - Bulk actions `SetFlagAction` in the timeline selection bar via the shared `bulkUpdateUserState` helper; `handleSetFlag` in `asset.service.ts`.
 - Search page: a flag section (like `SearchColorLabelsSection`) bound to `searchManager.filter.flags`, included in the "filters active" check and in the chips with i18n labels.
 - The `liveAssetPayloads` / `keepUserState` logic that stops websocket payloads from clobbering per-user state must also preserve `flag`.
@@ -77,14 +77,14 @@ One shared `ZoomImageWheelState`; each slot has its own `@zoom-image/core` insta
 | key | action |
 |---|---|
 | arrows | move focus |
-| `P` / `X` / `U` | pick / reject / clear flag on the focused photo (`X` also removes it in "remove" mode) |
+| `K` / `R` / `U` | pick / reject / clear flag on the focused photo (`R` also removes it in "remove" mode) |
 | `0`-`5` | rating |
 | `6`-`9` | toggle red/yellow/green/blue |
 | `Backspace` | remove from the view without flagging |
 | `Z` | fit / 100% |
 | `Esc` | exit |
 
-When exactly one photo remains, a banner shows "1 left, P to pick, Esc to finish".
+When exactly one photo remains, a banner shows "1 left, K to pick, Esc to finish".
 
 ### Setting
 
@@ -100,7 +100,7 @@ When exactly one photo remains, a banner shows "1 left, P to pick, Esc to finish
 
 - Synced pan across different aspect ratios is approximate.
 - Up to 6 originals at once is heavy; the concurrent-load cap and focused-first ordering mitigate this.
-- Shortcut conflicts (`P`/`X`/`U`/`C`) must be re-verified per page at implementation time.
+- Shortcut conflicts (`K`/`R`/`U`/`C`) must be re-verified per page at implementation time.
 
 ## Out of scope / later
 
