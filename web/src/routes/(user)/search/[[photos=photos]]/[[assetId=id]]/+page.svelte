@@ -375,19 +375,19 @@
             onclick={handleSelectAll}
           />
           <ActionButton action={Actions.AddToAlbum} />
-          {#if assetMultiSelectManager.isAllUserOwned}
-            <FavoriteAction
-              removeFavorite={assetMultiSelectManager.isAllFavorite}
-              onFavorite={(ids, isFavorite) => {
-                for (const id of ids) {
-                  const asset = searchResultAssets.find((asset) => asset.id === id);
-                  if (asset) {
-                    asset.isFavorite = isFavorite;
-                  }
+          <FavoriteAction
+            removeFavorite={assetMultiSelectManager.isAllFavorite}
+            onFavorite={(ids, isFavorite) => {
+              for (const id of ids) {
+                const asset = searchResultAssets.find((asset) => asset.id === id);
+                if (asset) {
+                  asset.isFavorite = isFavorite;
                 }
-              }}
-            />
+              }
+            }}
+          />
 
+          {#if assetMultiSelectManager.isAllUserOwned}
             <ButtonContextMenu icon={mdiDotsVertical} title={$t('menu')}>
               <ActionMenuItem action={Actions.AddToAlbum} />
               <DownloadAction menuItem />

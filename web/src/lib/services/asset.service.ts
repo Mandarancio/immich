@@ -149,6 +149,8 @@ export const getAssetActions = (
   const sharedLink = getSharedLink();
   const authUser = authManager.authenticated ? authManager.user : undefined;
   const isOwner = !!(authUser && authUser.id === asset.ownerId);
+  // any logged-in user who can see the asset may favorite it; shared link guests may not
+  const canFavorite = !!authUser && (isOwner || !sharedLink);
   const isAlbumOwner = !!(authUser && authUser.id === album?.albumUsers[0].user.id);
   const smartSearchEnabled = !!authUser && readPreloadedQuery(getUserConfigQuery()).machineLearning.clip.enabled;
 
@@ -207,7 +209,7 @@ export const getAssetActions = (
   const Favorite: ActionItem = {
     title: $t('to_favorite'),
     icon: mdiHeartOutline,
-    $if: () => isOwner && !asset.isFavorite,
+    $if: () => canFavorite && !asset.isFavorite,
     onAction: () => handleFavorite(asset),
     shortcuts: [{ key: 'f' }],
   };
@@ -215,7 +217,7 @@ export const getAssetActions = (
   const Unfavorite: ActionItem = {
     title: $t('unfavorite'),
     icon: mdiHeart,
-    $if: () => isOwner && asset.isFavorite,
+    $if: () => canFavorite && asset.isFavorite,
     onAction: () => handleUnfavorite(asset),
     shortcuts: [{ key: 'f' }],
   };
