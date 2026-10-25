@@ -33,6 +33,7 @@
   import { toTimelineAsset } from '$lib/utils/timeline-util';
   import {
     type AlbumResponseDto,
+    type AssetColorLabel,
     type AssetResponseDto,
     AssetVisibility,
     getAlbumInfo,
@@ -194,8 +195,15 @@
       description: $t('description'),
       queryAssetId: $t('query_asset_id'),
       ocr: $t('ocr'),
+      colorLabels: $t('color_label'),
     };
     return keyMap[key] || key;
+  }
+
+  function getColorLabelNames(colorLabels: Array<AssetColorLabel | 'none'>) {
+    return colorLabels
+      .map((colorLabel) => (colorLabel === 'none' ? $t('filter_no_color') : $t(`color_label_${colorLabel}`)))
+      .join(', ');
   }
 
   async function getPersonName(personIds: string[]) {
@@ -298,6 +306,8 @@
                 {#await getAlbumNames(value) then albumNames}
                   {albumNames}
                 {/await}
+              {:else if searchKey === 'colorLabels' && Array.isArray(value)}
+                {getColorLabelNames(value as Array<AssetColorLabel | 'none'>)}
               {:else if searchKey === 'rating'}
                 {$t('rating_count', { values: { count: value ?? 0 } })}
               {:else if value === null || value === ''}

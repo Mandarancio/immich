@@ -96,6 +96,7 @@ class SearchManager {
             ? MediaType.Video
             : MediaType.All,
       rating: searchQuery.rating,
+      colorLabels: [...(searchQuery.colorLabels ?? [])],
     };
   }
 
@@ -136,6 +137,7 @@ class SearchManager {
       albumIds: this.filter.albumIds.size > 0 ? [...this.filter.albumIds] : undefined,
       type,
       rating: this.filter.rating,
+      colorLabels: this.filter.colorLabels.length > 0 ? [...this.filter.colorLabels] : undefined,
     };
   }
 
