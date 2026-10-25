@@ -1,6 +1,7 @@
 import { AssetColorLabel, AssetFlag, getAssetInfo } from '@immich/sdk';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { tick } from 'svelte';
+import { getResizeObserverMock } from '$lib/__mocks__/resize-observer.mock';
 import CompareSlot from '$lib/components/compare/CompareSlot.svelte';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import { compareManager } from '$lib/managers/compare-manager.svelte';
@@ -72,6 +73,7 @@ const zoomed = (overrides: Partial<ZoomState> = {}): ZoomState => ({
 
 describe('CompareSlot', () => {
   const images: Array<{ src: string; load: () => void }> = [];
+  let resizeObserver: ReturnType<typeof getResizeObserverMock>;
 
   const info = (overrides: Record<string, unknown> = {}) =>
     assetFactory.build({
@@ -89,6 +91,8 @@ describe('CompareSlot', () => {
     authManager.setUser(userAdminFactory.build({ id: 'viewer' }));
     authManager.setPreferences(preferencesFactory.build({ ratings: { enabled: true } }));
     vi.mocked(getAssetInfo).mockReset();
+    resizeObserver = getResizeObserverMock();
+    vi.stubGlobal('ResizeObserver', resizeObserver);
     vi.stubGlobal(
       'Image',
       class FakeImage {
@@ -145,11 +149,11 @@ describe('CompareSlot', () => {
     vi.mocked(getAssetInfo).mockResolvedValue(info());
 
     const { unmount } = render(CompareSlot, { asset, focused: true });
-    expect(screen.getByTestId('compare-slot-focus-ring')).toBeInTheDocument();
+    expect(screen.getByTestId('compare-slot-focus-ring')).toBeDefined();
     unmount();
 
     render(CompareSlot, { asset, focused: false });
-    expect(screen.queryByTestId('compare-slot-focus-ring')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('compare-slot-focus-ring')).toBeNull();
   });
 
   describe('original', () => {
@@ -434,6 +438,182 @@ describe('CompareSlot', () => {
       compareRejectBehavior.set('dim');
       render(CompareSlot, { asset: { ...asset, flag: AssetFlag.Pick }, focused: false });
       expect(screen.getByTestId('compare-slot').className).not.toContain('opacity-40');
+    });
+  });
+
+  describe('resizing', () => {
+    it('re-reports the natural zoom when the slot is resized and stops observing on destroy', () => {
+      const asset = timelineAssetFactory.build();
+      compareManager.open([asset, timelineAssetFactory.build()]);
+      vi.mocked(getAssetInfo).mockResolvedValue(info());
+      const setNaturalZoom = vi.spyOn(compareManager, 'setNaturalZoom');
+
+      const { unmount } = render(CompareSlot, { asset, focused: true });
+      const image = screen.getByTestId('compare-slot-image') as HTMLImageElement;
+      Object.defineProperties(image, {
+        naturalWidth: { value: 4000 },
+        naturalHeight: { value: 3000 },
+        clientWidth: { value: 2000 },
+        clientHeight: { value: 1500 },
+      });
+
+      expect(resizeObserver).toHaveBeenCalledTimes(1);
+      const observer = resizeObserver.mock.results[0].value;
+      expect(observer.observe).toHaveBeenCalledWith(image.parentElement);
+      const callback = resizeObserver.mock.calls[0] as unknown as [() => void];
+      callback[0]();
+
+      expect(setNaturalZoom).toHaveBeenCalledWith(asset.id, 2);
+
+      unmount();
+      expect(observer.disconnect).toHaveBeenCalled();
+    });
+  });
+
+  describe('magnifier', () => {
+    const setup = async () => {
+      const asset = timelineAssetFactory.build();
+      compareManager.open([asset, timelineAssetFactory.build()]);
+      vi.mocked(getAssetInfo).mockResolvedValue(info());
+      render(CompareSlot, { asset, focused: true });
+      const image = screen.getByTestId('compare-slot-image') as HTMLImageElement;
+      Object.defineProperties(image, {
+        naturalWidth: { value: 4000 },
+        naturalHeight: { value: 3000 },
+      });
+      // a 400x300 picture at (100, 50), the slot itself sits at the origin in jsdom
+      image.getBoundingClientRect = () => new DOMRect(100, 50, 400, 300);
+      await fireEvent.load(image);
+      return { asset, image, container: image.parentElement! };
+    };
+
+    const move = async (target: Element, clientX: number, clientY: number) => {
+      await fireEvent(target, new MouseEvent('pointermove', { clientX, clientY, bubbles: true }));
+    };
+
+    it('shows no lens while disabled or without a point', async () => {
+      const { asset } = await setup();
+      expect(screen.queryByTestId('compare-slot-lens')).toBeNull();
+
+      compareManager.setMagnifierPoint(asset.id, 0.5, 0.5);
+      await tick();
+      expect(screen.queryByTestId('compare-slot-lens')).toBeNull();
+
+      compareManager.toggleMagnifier();
+      compareManager.clearMagnifierPoint(asset.id);
+      await tick();
+      expect(screen.queryByTestId('compare-slot-lens')).toBeNull();
+    });
+
+    it('renders the lens at the shared relative position, magnified', async () => {
+      const { image } = await setup();
+      compareManager.toggleMagnifier();
+      // set by another slot
+      compareManager.setMagnifierPoint('other', 0.25, 0.5);
+      await tick();
+
+      const lens = await screen.findByTestId('compare-slot-lens');
+      // center: x = 100 + 0.25 * 400, y = 50 + 0.5 * 300
+      expect(lens.style.left).toBe('120px');
+      expect(lens.style.top).toBe('120px');
+      expect(lens.style.width).toBe('160px');
+      expect(lens.style.height).toBe('160px');
+      expect(lens.style.backgroundSize).toBe('1600px 1200px');
+      expect(lens.style.backgroundPosition).toBe('-320px -520px');
+      expect(lens.style.backgroundImage).toContain(image.getAttribute('src'));
+      expect(lens.style.backgroundRepeat).toBe('no-repeat');
+      expect(lens.className).toContain('pointer-events-none');
+      expect(lens.className).toContain('rounded-full');
+
+      compareManager.setMagnifierLevel(8);
+      await tick();
+      expect(lens.style.backgroundSize).toBe('3200px 2400px');
+      expect(lens.style.backgroundPosition).toBe('-720px -1120px');
+    });
+
+    it('follows the zoom of the slot', async () => {
+      await setup();
+      compareManager.toggleMagnifier();
+      compareManager.setMagnifierPoint('other', 0.5, 0.5);
+      await tick();
+      const lens = await screen.findByTestId('compare-slot-lens');
+      expect(lens.style.left).toBe('220px');
+
+      const screenImage = screen.getByTestId('compare-slot-image') as HTMLImageElement;
+      screenImage.getBoundingClientRect = () => new DOMRect(0, 0, 800, 600);
+      compareManager.reportZoom('other', zoomed({ currentZoom: 2 }));
+      await tick();
+
+      expect(lens.style.left).toBe('320px');
+      expect(lens.style.backgroundSize).toBe('3200px 2400px');
+    });
+
+    it('uses the picture rect, not the letterboxed element', async () => {
+      const { image } = await setup();
+      // wide element 400x300 with a 4:3 picture is exact; make the element wider than the picture
+      image.getBoundingClientRect = () => new DOMRect(0, 0, 800, 300);
+      compareManager.toggleMagnifier();
+      compareManager.setMagnifierPoint('other', 0, 0);
+      await tick();
+
+      const lens = await screen.findByTestId('compare-slot-lens');
+      // picture is 400x300, centered: starts at x = 200
+      expect(lens.style.left).toBe('120px');
+      expect(lens.style.top).toBe('-80px');
+    });
+
+    it('sets the point on pointermove over the picture and clears it outside', async () => {
+      const { asset, container } = await setup();
+      compareManager.toggleMagnifier();
+      await tick();
+      expect(container.className).toContain('cursor-crosshair');
+
+      await move(container, 300, 200);
+      expect(compareManager.magnifierPoint).toEqual({ sourceId: asset.id, u: 0.5, v: 0.5 });
+
+      await move(container, 50, 200);
+      expect(compareManager.magnifierPoint).toBeUndefined();
+    });
+
+    it('does not touch the point of another slot when outside the picture', async () => {
+      const { container } = await setup();
+      compareManager.toggleMagnifier();
+      compareManager.setMagnifierPoint('other', 0.1, 0.1);
+
+      await move(container, 50, 200);
+
+      expect(compareManager.magnifierPoint?.sourceId).toBe('other');
+    });
+
+    it('clears the point on pointerleave', async () => {
+      const { asset, container } = await setup();
+      compareManager.toggleMagnifier();
+      compareManager.setMagnifierPoint(asset.id, 0.5, 0.5);
+
+      await fireEvent(container, new MouseEvent('pointerleave'));
+
+      expect(compareManager.magnifierPoint).toBeUndefined();
+    });
+
+    it('ignores the pointer while disabled', async () => {
+      const { container } = await setup();
+      expect(container.className).not.toContain('cursor-crosshair');
+
+      await move(container, 300, 200);
+
+      expect(compareManager.magnifierPoint).toBeUndefined();
+    });
+
+    it('does not prevent default or stop propagation of pointer events', async () => {
+      const { container } = await setup();
+      compareManager.toggleMagnifier();
+      const event = new MouseEvent('pointermove', { clientX: 300, clientY: 200, bubbles: true, cancelable: true });
+      const stop = vi.spyOn(event, 'stopPropagation');
+
+      container.dispatchEvent(event);
+
+      expect(event.defaultPrevented).toBe(false);
+      expect(stop).not.toHaveBeenCalled();
     });
   });
 });
