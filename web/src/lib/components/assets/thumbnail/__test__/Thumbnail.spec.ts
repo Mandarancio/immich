@@ -1,4 +1,4 @@
-import { AssetColorLabel, AssetVisibility } from '@immich/sdk';
+import { AssetColorLabel, AssetFlag, AssetVisibility } from '@immich/sdk';
 import { render } from '@testing-library/svelte';
 import { getIntersectionObserverMock } from '$lib/__mocks__/intersection-observer.mock';
 import Thumbnail from '$lib/components/assets/thumbnail/Thumbnail.svelte';
@@ -123,6 +123,88 @@ describe('Thumbnail component', () => {
       } finally {
         sharedLinkSpy.mockRestore();
       }
+    });
+
+    describe('flag badges', () => {
+      it('shows the pick badge for a picked asset', () => {
+        const asset = timelineAssetFactory.build({ flag: AssetFlag.Pick });
+        const { getByTestId, queryByTestId } = render(Thumbnail, { asset });
+
+        expect(getByTestId('thumbnail-flag-pick').getAttribute('aria-label')).toBe('flag_picked');
+        expect(queryByTestId('thumbnail-flag-reject')).toBeNull();
+      });
+
+      it('shows the reject badge and dims the image for a rejected asset', () => {
+        const asset = timelineAssetFactory.build({ flag: AssetFlag.Reject });
+        const { baseElement, getByTestId, queryByTestId } = render(Thumbnail, { asset });
+
+        expect(getByTestId('thumbnail-flag-reject').getAttribute('aria-label')).toBe('flag_rejected');
+        expect(queryByTestId('thumbnail-flag-pick')).toBeNull();
+        expect(baseElement.querySelector('img')?.classList.contains('opacity-40')).toBe(true);
+        // the badge itself is not dimmed
+        expect(getByTestId('thumbnail-flag-reject').closest('.opacity-40')).toBeNull();
+      });
+
+      it('does not dim the image of a picked or unflagged asset', () => {
+        const picked = render(Thumbnail, { asset: timelineAssetFactory.build({ flag: AssetFlag.Pick }) });
+        expect(picked.baseElement.querySelector('img')?.classList.contains('opacity-40')).toBe(false);
+        picked.unmount();
+
+        const none = render(Thumbnail, { asset: timelineAssetFactory.build({ flag: null }) });
+        expect(none.baseElement.querySelector('img')?.classList.contains('opacity-40')).toBe(false);
+      });
+
+      it('shows nothing without a flag', () => {
+        const asset = timelineAssetFactory.build({ flag: null });
+        const { queryByTestId } = render(Thumbnail, { asset });
+
+        expect(queryByTestId('thumbnail-flag-pick')).toBeNull();
+        expect(queryByTestId('thumbnail-flag-reject')).toBeNull();
+      });
+
+      it('shows nothing on a shared link', () => {
+        const sharedLinkSpy = vi.spyOn(authManager, 'isSharedLink', 'get').mockReturnValue(true);
+        try {
+          const asset = timelineAssetFactory.build({ flag: AssetFlag.Reject });
+          const { baseElement, queryByTestId } = render(Thumbnail, { asset });
+
+          expect(queryByTestId('thumbnail-flag-pick')).toBeNull();
+          expect(queryByTestId('thumbnail-flag-reject')).toBeNull();
+          expect(baseElement.querySelector('img')?.classList.contains('opacity-40')).toBe(false);
+        } finally {
+          sharedLinkSpy.mockRestore();
+        }
+      });
+
+      it('takes a fourth slot above heart, state row and archive without moving them', () => {
+        const bottomClass = (element: Element | null | undefined) =>
+          [...(element?.classList ?? [])].find((name) => name.startsWith('bottom-'));
+        const asset = timelineAssetFactory.build({
+          colorLabel: AssetColorLabel.Green,
+          isFavorite: true,
+          flag: AssetFlag.Pick,
+          visibility: AssetVisibility.Archive,
+        });
+        const { baseElement, getByTestId } = render(Thumbnail, { asset, showArchiveIcon: true });
+
+        const heart = baseElement.querySelector('[data-icon-favorite]')?.parentElement;
+        const row = getByTestId('thumbnail-state-row');
+        const flag = getByTestId('thumbnail-flag-pick');
+        const archive = baseElement.querySelector('[data-icon-archive]')?.parentElement;
+        expect([heart, row, flag, archive].map((element) => bottomClass(element))).toEqual([
+          'bottom-2',
+          'bottom-10',
+          'bottom-18',
+          'bottom-26',
+        ]);
+      });
+
+      it('sits at the bottom when it is the only overlay', () => {
+        const asset = timelineAssetFactory.build({ flag: AssetFlag.Pick, isFavorite: false, colorLabel: null });
+        const { getByTestId } = render(Thumbnail, { asset });
+
+        expect(getByTestId('thumbnail-flag-pick').classList.contains('bottom-2')).toBe(true);
+      });
     });
 
     describe('bottom-left overlay stacking', () => {

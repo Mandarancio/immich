@@ -10,13 +10,15 @@
   import { colorLabelClass } from '$lib/utils/color-label';
   import { getAltText } from '$lib/utils/thumbnail-util';
   import { t } from 'svelte-i18n';
-  import { AssetMediaSize, AssetVisibility, type UserResponseDto } from '@immich/sdk';
+  import { AssetFlag, AssetMediaSize, AssetVisibility, type UserResponseDto } from '@immich/sdk';
   import { Icon } from '@immich/ui';
   import {
     mdiArchiveArrowDownOutline,
     mdiCameraBurst,
     mdiCheckCircle,
+    mdiClose,
     mdiFileGifBox,
+    mdiFlag,
     mdiHeart,
     mdiMagnifyPlusOutline,
     mdiMotionPauseOutline,
@@ -94,14 +96,17 @@
   let showFavoriteIcon = $derived(!authManager.isSharedLink && !!asset.isFavorite);
   let showColorDot = $derived(!authManager.isSharedLink && !!asset.colorLabel);
   let showStateRow = $derived(showColorDot || showRatingBadge);
+  let showFlag = $derived(!authManager.isSharedLink && !!asset.flag);
+  let dimmed = $derived(showFlag && asset.flag === AssetFlag.Reject);
   let showArchive = $derived(
     !authManager.isSharedLink && showArchiveIcon && asset.visibility === AssetVisibility.Archive,
   );
   // bottom-left overlays stack upwards (24px icons, 8px gap) in a stable order:
-  // favorite heart, color dot / rating badge row, archive icon. Only the present ones take a slot.
-  const bottomSlots = ['bottom-2', 'bottom-10', 'bottom-18'];
+  // favorite heart, color dot / rating badge row, flag badge, archive icon. Only the present ones take a slot.
+  const bottomSlots = ['bottom-2', 'bottom-10', 'bottom-18', 'bottom-26'];
   let stateRowBottom = $derived(bottomSlots[Number(showFavoriteIcon)]);
-  let archiveBottom = $derived(bottomSlots[Number(showFavoriteIcon) + Number(showStateRow)]);
+  let flagBottom = $derived(bottomSlots[Number(showFavoriteIcon) + Number(showStateRow)]);
+  let archiveBottom = $derived(bottomSlots[Number(showFavoriteIcon) + Number(showStateRow) + Number(showFlag)]);
   let assetOwner = $derived(albumUsers?.find((user) => user.id === asset.ownerId) ?? null);
 
   const onIconClickedHandler = (e?: MouseEvent) => {
@@ -259,8 +264,8 @@
   <div class="group absolute inset-y-0" style:width="inherit" style:height="inherit">
     <div class={['absolute size-full bg-transparent transition-transform select-none', { 'scale-[0.85]': selected }]}>
       <ImageThumbnail
-        class={['absolute group-focus-visible:rounded-lg', imageClass]}
-        brokenAssetClass={['z-1 absolute group-focus-visible:rounded-lg', brokenAssetClass]}
+        class={['absolute group-focus-visible:rounded-lg', dimmed && 'opacity-40', imageClass]}
+        brokenAssetClass={['z-1 absolute group-focus-visible:rounded-lg', dimmed && 'opacity-40', brokenAssetClass]}
         url={getAssetMediaUrl({ id: asset.id, size: AssetMediaSize.Thumbnail, cacheKey: asset.thumbhash })}
         altText={$getAltText(asset)}
         widthStyle="{width}px"
@@ -370,6 +375,22 @@
                 {asset.rating}
               </span>
             {/if}
+          </div>
+        {/if}
+
+        <!-- Per-user pick/reject flag badge, stacked above the color/rating row -->
+        {#if showFlag && asset.flag}
+          <div
+            data-testid="thumbnail-flag-{asset.flag}"
+            role="img"
+            aria-label={$t(asset.flag === AssetFlag.Pick ? 'flag_picked' : 'flag_rejected')}
+            class={[
+              'absolute inset-s-2 z-2 flex size-6 items-center justify-center rounded-full text-white ring-1 ring-white/80',
+              asset.flag === AssetFlag.Pick ? 'bg-green-600' : 'bg-red-600',
+              flagBottom,
+            ]}
+          >
+            <Icon icon={asset.flag === AssetFlag.Pick ? mdiFlag : mdiClose} size="16" aria-hidden />
           </div>
         {/if}
 

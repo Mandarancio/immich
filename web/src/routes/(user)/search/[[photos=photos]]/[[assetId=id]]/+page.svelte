@@ -34,6 +34,7 @@
   import {
     type AlbumResponseDto,
     type AssetColorLabel,
+    type AssetFlag,
     type AssetResponseDto,
     AssetVisibility,
     getAlbumInfo,
@@ -196,6 +197,7 @@
       queryAssetId: $t('query_asset_id'),
       ocr: $t('ocr'),
       colorLabels: $t('color_label'),
+      flags: $t('flag'),
     };
     return keyMap[key] || key;
   }
@@ -203,6 +205,12 @@
   function getColorLabelNames(colorLabels: Array<AssetColorLabel | 'none'>) {
     return colorLabels
       .map((colorLabel) => (colorLabel === 'none' ? $t('filter_no_color') : $t(`color_label_${colorLabel}`)))
+      .join(', ');
+  }
+
+  function getFlagNames(flags: Array<AssetFlag | 'none'>) {
+    return flags
+      .map((flag) => (flag === 'none' ? $t('filter_unflagged') : $t(flag === 'pick' ? 'flag_picked' : 'flag_rejected')))
       .join(', ');
   }
 
@@ -308,6 +316,8 @@
                 {/await}
               {:else if searchKey === 'colorLabels' && Array.isArray(value)}
                 {getColorLabelNames(value as Array<AssetColorLabel | 'none'>)}
+              {:else if searchKey === 'flags' && Array.isArray(value)}
+                {getFlagNames(value as Array<AssetFlag | 'none'>)}
               {:else if searchKey === 'rating'}
                 {$t('rating_count', { values: { count: value ?? 0 } })}
               {:else if value === null || value === ''}

@@ -67,6 +67,50 @@ describe('TimelineFilterBar component', () => {
     expect(filter.colorLabels).toEqual(['none']);
   });
 
+  it('toggles flag chips', async () => {
+    const user = userEvent.setup();
+    render(TimelineFilterBar, { props: { filter } });
+
+    expect(screen.getByRole('group', { name: 'flag' })).toBeTruthy();
+    for (const id of ['pick', 'reject', 'none']) {
+      expect(screen.getByTestId(`filter-flag-${id}`).getAttribute('aria-pressed')).toBe('false');
+    }
+
+    await user.click(screen.getByTestId('filter-flag-pick'));
+    expect(filter.flags).toEqual(['pick']);
+    expect(screen.getByTestId('filter-flag-pick').getAttribute('aria-pressed')).toBe('true');
+
+    await user.click(screen.getByTestId('filter-flag-none'));
+    expect(filter.flags).toEqual(['pick', 'none']);
+    expect(screen.getByTestId('filter-flag-none').getAttribute('aria-pressed')).toBe('true');
+
+    await user.click(screen.getByTestId('filter-flag-reject'));
+    await user.click(screen.getByTestId('filter-flag-pick'));
+    expect(filter.flags).toEqual(['none', 'reject']);
+    expect(screen.getByTestId('filter-flag-pick').getAttribute('aria-pressed')).toBe('false');
+  });
+
+  it('clear all resets the flag filter', async () => {
+    const user = userEvent.setup();
+    render(TimelineFilterBar, { props: { filter } });
+
+    await user.click(screen.getByTestId('filter-flag-reject'));
+    expect(screen.getByTestId('filter-clear-all')).toBeTruthy();
+
+    await user.click(screen.getByTestId('filter-clear-all'));
+    expect(filter.flags).toEqual([]);
+    expect(screen.getByTestId('filter-flag-reject').getAttribute('aria-pressed')).toBe('false');
+  });
+
+  it('hides the flag chips when not authenticated', () => {
+    authManager.reset();
+    render(TimelineFilterBar, { props: { filter } });
+
+    expect(screen.queryByTestId('filter-flag-pick')).toBeNull();
+    expect(screen.queryByTestId('filter-flag-reject')).toBeNull();
+    expect(screen.queryByTestId('filter-flag-none')).toBeNull();
+  });
+
   it('toggles the favorite filter', async () => {
     const user = userEvent.setup();
     render(TimelineFilterBar, { props: { filter } });
