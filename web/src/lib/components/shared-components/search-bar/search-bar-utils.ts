@@ -1,4 +1,4 @@
-import { getAllPeople, type PersonResponseDto, type TagResponseDto } from '@immich/sdk';
+import { getAllPeople, type AlbumResponseDto, type PersonResponseDto, type TagResponseDto } from '@immich/sdk';
 import { DateTime } from 'luxon';
 import { t } from 'svelte-i18n';
 import type { SvelteSet } from 'svelte/reactivity';
@@ -178,6 +178,22 @@ export const getSearchTagsTitle = (tags: TagResponseDto[], selected: SvelteSet<s
   }
 
   return selected.size === 1 ? tag : $t('tag_plus_more_tags', { values: { tag, count: selected.size - 1 } });
+};
+
+export const getSearchAlbumsTitle = (albums: AlbumResponseDto[], selected: SvelteSet<string>) => {
+  const $t = get(t);
+
+  const id = selected.values().next().value;
+  if (!id) {
+    return undefined;
+  }
+
+  const album = albums.find((a) => a.id === id)?.albumName;
+  if (!album) {
+    return undefined;
+  }
+
+  return selected.size === 1 ? album : $t('album_plus_more_albums', { values: { album, count: selected.size - 1 } });
 };
 
 export const isPopoverContent = (event: FocusEvent): boolean => {
