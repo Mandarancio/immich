@@ -3,6 +3,7 @@ import { DateTime } from 'luxon';
 import { AssetJobName, AssetStatsResponseDto } from 'src/dtos/asset.dto.js';
 import { AssetEditAction } from 'src/dtos/editing.dto.js';
 import {
+  AssetColorLabel,
   AssetFileType,
   AssetMetadataKey,
   AssetStatus,
@@ -312,6 +313,140 @@ describe(AssetService.name, () => {
       expect(mocks.asset.setUserState).not.toHaveBeenCalled();
     });
 
+    it('should write a rating for a non-owned album asset to the user state', async () => {
+      const asset = AssetFactory.create();
+      mocks.access.asset.checkAlbumAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getById.mockResolvedValue(getForAsset(asset));
+
+      await sut.update(authStub.admin, asset.id, { rating: 4 });
+
+      expect(mocks.asset.setUserState).toHaveBeenCalledWith(authStub.admin.user.id, [asset.id], { rating: 4 });
+      expect(mocks.asset.update).not.toHaveBeenCalled();
+      expect(mocks.asset.upsertExif).not.toHaveBeenCalled();
+      expect(mocks.websocket.clientSend).not.toHaveBeenCalled();
+    });
+
+    it('should write a color label for a non-owned partner asset to the user state', async () => {
+      const asset = AssetFactory.create();
+      mocks.access.asset.checkPartnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getById.mockResolvedValue(getForAsset(asset));
+
+      await sut.update(authStub.admin, asset.id, { colorLabel: AssetColorLabel.Red });
+
+      expect(mocks.asset.setUserState).toHaveBeenCalledWith(authStub.admin.user.id, [asset.id], {
+        colorLabel: AssetColorLabel.Red,
+      });
+      expect(mocks.asset.update).not.toHaveBeenCalled();
+    });
+
+    it('should clear the rating of a non-owned partner asset', async () => {
+      const asset = AssetFactory.create();
+      mocks.access.asset.checkPartnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getById.mockResolvedValue(getForAsset(asset));
+
+      await sut.update(authStub.admin, asset.id, { rating: null });
+
+      expect(mocks.asset.setUserState).toHaveBeenCalledWith(authStub.admin.user.id, [asset.id], { rating: null });
+    });
+
+    it('should write favorite, rating and color label of a non-owned asset in one call', async () => {
+      const asset = AssetFactory.create();
+      mocks.access.asset.checkPartnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getById.mockResolvedValue(getForAsset(asset));
+
+      await sut.update(authStub.admin, asset.id, { isFavorite: true, rating: 2, colorLabel: AssetColorLabel.Blue });
+
+      expect(mocks.asset.setUserState).toHaveBeenCalledTimes(1);
+      expect(mocks.asset.setUserState).toHaveBeenCalledWith(authStub.admin.user.id, [asset.id], {
+        isFavorite: true,
+        rating: 2,
+        colorLabel: AssetColorLabel.Blue,
+      });
+    });
+
+    it('should not let a non-owner reject an asset', async () => {
+      const asset = AssetFactory.create();
+      mocks.access.asset.checkAlbumAccess.mockResolvedValue(new Set([asset.id]));
+
+      await expect(sut.update(authStub.admin, asset.id, { rating: -1 })).rejects.toBeInstanceOf(BadRequestException);
+      expect(mocks.asset.setUserState).not.toHaveBeenCalled();
+    });
+
+    it('should write only the color label of an owned asset to the user state', async () => {
+      const asset = AssetFactory.create();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getById.mockResolvedValue(getForAsset(asset));
+
+      await sut.update(authStub.admin, asset.id, { colorLabel: AssetColorLabel.Green });
+
+      expect(mocks.asset.setUserState).toHaveBeenCalledWith(authStub.admin.user.id, [asset.id], {
+        colorLabel: AssetColorLabel.Green,
+      });
+      expect(mocks.asset.update).not.toHaveBeenCalled();
+      expect(mocks.asset.upsertExif).not.toHaveBeenCalled();
+      expect(mocks.websocket.clientSend).not.toHaveBeenCalled();
+    });
+
+    it('should write the rating of an owned asset to exif and not to the user state', async () => {
+      const asset = AssetFactory.create();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getById.mockResolvedValue(getForAsset(asset));
+      mocks.asset.update.mockResolvedValue(getForAsset(asset));
+
+      await sut.update(authStub.admin, asset.id, { rating: 3 });
+
+      expect(mocks.asset.upsertExif).toHaveBeenCalledWith(
+        expect.objectContaining({ exif: expect.objectContaining({ assetId: asset.id, rating: 3 }) }),
+      );
+      expect(mocks.asset.setUserState).not.toHaveBeenCalled();
+    });
+
+    it('should update an owned asset normally and store the color label in the user state', async () => {
+      const asset = AssetFactory.create();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getById.mockResolvedValue(getForAsset(asset));
+      mocks.asset.update.mockResolvedValue(getForAsset(asset));
+
+      await sut.update(authStub.admin, asset.id, { description: 'x', colorLabel: AssetColorLabel.Red });
+
+      expect(mocks.asset.upsertExif).toHaveBeenCalledWith(
+        expect.objectContaining({ exif: expect.objectContaining({ assetId: asset.id, description: 'x' }) }),
+      );
+      expect(mocks.asset.update).toHaveBeenCalledWith({ id: asset.id });
+      expect(mocks.asset.setUserState).toHaveBeenCalledWith(authStub.admin.user.id, [asset.id], {
+        colorLabel: AssetColorLabel.Red,
+      });
+    });
+
+    it('should reject a rating or color label for an asset the user cannot read', async () => {
+      await expect(sut.update(authStub.admin, 'asset-1', { rating: 3 })).rejects.toBeInstanceOf(BadRequestException);
+      await expect(sut.update(authStub.admin, 'asset-1', { colorLabel: AssetColorLabel.Red })).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      expect(mocks.asset.setUserState).not.toHaveBeenCalled();
+    });
+
+    it('should not set a color label for shared link auth', async () => {
+      const asset = AssetFactory.create();
+      mocks.access.asset.checkAlbumAccess.mockResolvedValue(new Set([asset.id]));
+      const auth = { ...authStub.admin, sharedLink: { id: 'link' } } as typeof authStub.admin;
+
+      await expect(sut.update(auth, asset.id, { colorLabel: AssetColorLabel.Red })).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      expect(mocks.asset.setUserState).not.toHaveBeenCalled();
+    });
+
+    it('should not let a non-owner update the description', async () => {
+      const asset = AssetFactory.create();
+      mocks.access.asset.checkAlbumAccess.mockResolvedValue(new Set([asset.id]));
+
+      await expect(sut.update(authStub.admin, asset.id, { description: 'x' })).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      expect(mocks.asset.setUserState).not.toHaveBeenCalled();
+    });
+
     it('should update the exif description', async () => {
       const asset = AssetFactory.create();
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
@@ -583,6 +718,58 @@ describe(AssetService.name, () => {
         sut.updateAll(auth, { ids: ['shared'], isFavorite: true, visibility: AssetVisibility.Archive }),
       ).rejects.toBeInstanceOf(BadRequestException);
       expect(mocks.asset.setUserState).not.toHaveBeenCalled();
+    });
+
+    it('should write ratings of non-owned assets to the user state and owned ones to exif', async () => {
+      const auth = AuthFactory.create();
+      mocks.access.asset.checkOwnerAccess.mockImplementation((_userId, ids) =>
+        Promise.resolve(new Set([...ids].filter((id) => id === 'owned'))),
+      );
+      mocks.access.asset.checkAlbumAccess.mockResolvedValue(new Set(['shared']));
+
+      await sut.updateAll(auth, { ids: ['owned', 'shared'], rating: 5 });
+
+      expect(mocks.asset.setUserState).toHaveBeenCalledWith(auth.user.id, ['shared'], { rating: 5 });
+      expect(mocks.asset.setUserState).not.toHaveBeenCalledWith(auth.user.id, ['owned'], expect.anything());
+      expect(mocks.asset.updateAllExif).toHaveBeenCalledWith(['owned'], { rating: 5 });
+      expect(mocks.job.queueAll).toHaveBeenCalledWith([{ name: JobName.SidecarWrite, data: { id: 'owned' } }]);
+    });
+
+    it('should only write the color label to the user state in a color-only bulk update', async () => {
+      const auth = AuthFactory.create();
+      mocks.access.asset.checkOwnerAccess.mockImplementation((_userId, ids) =>
+        Promise.resolve(new Set([...ids].filter((id) => id === 'owned'))),
+      );
+      mocks.access.asset.checkAlbumAccess.mockResolvedValue(new Set(['shared']));
+
+      await sut.updateAll(auth, { ids: ['owned', 'shared'], colorLabel: AssetColorLabel.Purple });
+
+      expect(mocks.asset.setUserState).toHaveBeenCalledWith(auth.user.id, ['shared'], {
+        colorLabel: AssetColorLabel.Purple,
+      });
+      expect(mocks.asset.setUserState).toHaveBeenCalledWith(auth.user.id, ['owned'], {
+        colorLabel: AssetColorLabel.Purple,
+      });
+      expect(mocks.asset.updateAll).not.toHaveBeenCalled();
+      expect(mocks.asset.updateAllExif).not.toHaveBeenCalled();
+    });
+
+    it('should not let a non-owner reject assets in bulk', async () => {
+      const auth = AuthFactory.create();
+      mocks.access.asset.checkAlbumAccess.mockResolvedValue(new Set(['shared']));
+
+      await expect(sut.updateAll(auth, { ids: ['shared'], rating: -1 })).rejects.toBeInstanceOf(BadRequestException);
+      expect(mocks.asset.setUserState).not.toHaveBeenCalled();
+    });
+
+    it('should store the color label in the user state when combined with other owner fields', async () => {
+      const auth = AuthFactory.create();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1']));
+
+      await sut.updateAll(auth, { ids: ['asset-1'], visibility: AssetVisibility.Archive, colorLabel: null });
+
+      expect(mocks.asset.updateAll).toHaveBeenCalledWith(['asset-1'], { visibility: AssetVisibility.Archive });
+      expect(mocks.asset.setUserState).toHaveBeenCalledWith(auth.user.id, ['asset-1'], { colorLabel: null });
     });
 
     it('should update all assets', async () => {

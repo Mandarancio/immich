@@ -1,8 +1,9 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
-import { isUndefined, omitBy } from 'lodash-es';
+import { isUndefined, omitBy, pick } from 'lodash-es';
 import { DateTime, Duration } from 'luxon';
 import type { AssetFile } from 'src/database.js';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
+import type { UserStateChange } from 'src/repositories/asset.repository.js';
 import type { JobItem, JobOf } from 'src/types.js';
 import { OnJob } from 'src/decorators.js';
 import { AssetResponseDto, SanitizedAssetResponseDto, mapAsset } from 'src/dtos/asset-response.dto.js';
@@ -54,6 +55,8 @@ import { extractTimeZone } from 'src/utils/date.js';
 import { batched, findOrFail } from 'src/utils/misc.js';
 import { transformOcrBoundingBox } from 'src/utils/transform.js';
 
+const STATE_KEYS = ['isFavorite', 'rating', 'colorLabel'];
+
 @Injectable()
 export class AssetService extends BaseService {
   async getStatistics(auth: AuthDto, dto: AssetStatsDto) {
@@ -86,16 +89,20 @@ export class AssetService extends BaseService {
   }
 
   async update(auth: AuthDto, id: string, dto: UpdateAssetDto): Promise<AssetResponseDto> {
-    if (this.isFavoriteOnly(auth, dto, dto.isFavorite)) {
-      const ownedIds = await this.applySharedFavorites(auth, [id], dto.isFavorite!);
-      if (ownedIds.length === 0) {
+    if (this.isStateOnly(auth, dto)) {
+      const ownedIds = await this.applyUserState(auth, [id], dto);
+      // nothing left for the owner path (non-owned asset, or only a color label which lives in the user state)
+      if (ownedIds.length === 0 || (dto.isFavorite === undefined && dto.rating === undefined)) {
         return this.get(auth, id) as Promise<AssetResponseDto>;
+      }
+    } else {
+      await this.requireAccess({ auth, permission: Permission.AssetUpdate, ids: [id] });
+      if (dto.colorLabel !== undefined) {
+        await this.assetRepository.setUserState(auth.user.id, [id], { colorLabel: dto.colorLabel });
       }
     }
 
-    await this.requireAccess({ auth, permission: Permission.AssetUpdate, ids: [id] });
-
-    const { description, dateTimeOriginal, latitude, longitude, rating, ...rest } = dto;
+    const { description, dateTimeOriginal, latitude, longitude, rating, colorLabel: _colorLabel, ...rest } = dto;
     const repos = { asset: this.assetRepository, event: this.eventRepository };
 
     let previousMotion: { id: string } | null = null;
@@ -148,16 +155,21 @@ export class AssetService extends BaseService {
       duplicateId,
       dateTimeRelative,
       timeZone,
+      colorLabel,
     } = dto;
     let ids = requestedIds;
-    if (this.isFavoriteOnly(auth, dto, isFavorite)) {
-      ids = await this.applySharedFavorites(auth, requestedIds, isFavorite!);
-      if (ids.length === 0) {
+    if (this.isStateOnly(auth, dto)) {
+      ids = await this.applyUserState(auth, requestedIds, dto);
+      // nothing left for the owner path (no owned ids, or only a color label which lives in the user state)
+      if (ids.length === 0 || (isFavorite === undefined && rating === undefined)) {
         return;
       }
+    } else {
+      await this.requireAccess({ auth, permission: Permission.AssetUpdate, ids });
+      if (colorLabel !== undefined) {
+        await this.assetRepository.setUserState(auth.user.id, ids, { colorLabel });
+      }
     }
-
-    await this.requireAccess({ auth, permission: Permission.AssetUpdate, ids });
 
     const assetDto = omitBy({ isFavorite, visibility, duplicateId }, isUndefined);
     const exifDto = omitBy(
@@ -642,12 +654,14 @@ export class AssetService extends BaseService {
     await this.jobRepository.queue({ name: JobName.AssetEditThumbnailGeneration, data: { id } });
   }
 
-  // a favorite-only update is allowed on any asset the user can read; non-owned ones go to asset_user_state
-  private isFavoriteOnly(auth: AuthDto, dto: object, isFavorite?: boolean) {
-    if (auth.sharedLink || isFavorite === undefined) {
+  // an update touching only isFavorite, rating and colorLabel is allowed on any asset the user can read;
+  // non-owned ones go to asset_user_state
+  private isStateOnly(auth: AuthDto, dto: object): boolean {
+    if (auth.sharedLink) {
       return false;
     }
-    return Object.entries(dto).every(([key, value]) => key === 'ids' || key === 'isFavorite' || value === undefined);
+    const entries = Object.entries(dto).filter(([key, value]) => key !== 'ids' && value !== undefined);
+    return entries.length > 0 && entries.every(([key]) => STATE_KEYS.includes(key));
   }
 
   // the asset column stays authoritative for owned assets (legacy clients and sync read it), so the owner row in
@@ -656,17 +670,25 @@ export class AssetService extends BaseService {
     await this.assetRepository.setUserState(auth.user.id, ownedIds, { isFavorite });
   }
 
-  // writes shared favorites for the non-owned ids and returns the owned ids
-  private async applySharedFavorites(auth: AuthDto, ids: string[], isFavorite: boolean): Promise<string[]> {
+  // writes the per-user state of the non-owned ids and the color label of the owned ids, and returns the owned ids
+  // (their favorite and rating are written by the owner path)
+  private async applyUserState(auth: AuthDto, ids: string[], dto: UserStateChange): Promise<string[]> {
     const owned = await this.checkAccess({ auth, permission: Permission.AssetUpdate, ids });
     const others = ids.filter((id) => !owned.has(id));
-    if (others.length === 0) {
-      return ids;
+    const ownedIds = ids.filter((id) => owned.has(id));
+
+    if (others.length > 0) {
+      await this.requireAccess({ auth, permission: Permission.AssetRead, ids: others });
+      if (dto.rating === -1) {
+        throw new BadRequestException('Only the owner can reject an asset');
+      }
+      await this.assetRepository.setUserState(auth.user.id, others, pick(dto, STATE_KEYS));
     }
 
-    await this.requireAccess({ auth, permission: Permission.AssetRead, ids: others });
-    await this.assetRepository.setUserState(auth.user.id, others, { isFavorite });
+    if (ownedIds.length > 0 && dto.colorLabel !== undefined) {
+      await this.assetRepository.setUserState(auth.user.id, ownedIds, { colorLabel: dto.colorLabel });
+    }
 
-    return ids.filter((id) => owned.has(id));
+    return ownedIds;
   }
 }
