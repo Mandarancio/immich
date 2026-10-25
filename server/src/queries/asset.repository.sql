@@ -340,6 +340,28 @@ where
 limit
   $3
 
+-- AssetRepository.getFavoriteIds
+select
+  "assetId"
+from
+  "asset_favorite"
+where
+  "userId" = $1
+  and "assetId" = any ($2::uuid[])
+
+-- AssetRepository.addFavorites
+insert into
+  "asset_favorite" ("userId", "assetId")
+values
+  ($1, $2)
+on conflict do nothing
+
+-- AssetRepository.removeFavorites
+delete from "asset_favorite"
+where
+  "userId" = $1
+  and "assetId" = any ($2::uuid[])
+
 -- AssetRepository.getCalendarHeatmap
 select
   date_trunc('DAY', "asset"."createdAt" AT TIME ZONE 'UTC') AT TIME ZONE 'UTC' as "date",
@@ -384,8 +406,21 @@ with
       "asset"."duration",
       "asset"."id",
       "asset"."visibility",
-      asset."isFavorite"
-      and asset."ownerId" = $1 as "isFavorite",
+      (
+        (
+          "asset"."ownerId" = $1
+          and "asset"."isFavorite" = $2
+        )
+        or exists (
+          select
+            1 as "exists"
+          from
+            "asset_favorite"
+          where
+            "asset_favorite"."assetId" = "asset"."id"
+            and "asset_favorite"."userId" = $3
+        )
+      ) as "isFavorite",
       asset.type = 'IMAGE' as "isImage",
       asset."deletedAt" is not null as "isTrashed",
       "asset"."livePhotoVideoId",
@@ -427,14 +462,14 @@ with
         where
           "stacked"."stackId" = "asset"."stackId"
           and "stacked"."deletedAt" is null
-          and "stacked"."visibility" = $2
+          and "stacked"."visibility" = $4
         group by
           "stacked"."stackId"
       ) as "stacked_assets" on true
     where
       "asset"."deletedAt" is null
       and "asset"."visibility" in ('archive', 'timeline')
-      and date_trunc('MONTH', "localDateTime" AT TIME ZONE 'UTC') AT TIME ZONE 'UTC' = $3
+      and date_trunc('MONTH', "localDateTime" AT TIME ZONE 'UTC') AT TIME ZONE 'UTC' = $5
       and not exists (
         select
         from
