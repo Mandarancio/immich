@@ -13,6 +13,7 @@ import { TagResponseSchema, mapTag } from 'src/dtos/tag.dto.js';
 import { UserResponseSchema, mapUser } from 'src/dtos/user.dto.js';
 import {
   AssetColorLabelSchema,
+  AssetFlagSchema,
   AssetStatus,
   AssetType,
   AssetTypeSchema,
@@ -99,6 +100,10 @@ export const AssetResponseSchema = SanitizedAssetResponseSchema.extend(
     colorLabel: AssetColorLabelSchema.nullable()
       .optional()
       .describe("The viewer's own color label")
+      .meta(new HistoryBuilder().added('v3.3.0').getExtensions()),
+    flag: AssetFlagSchema.nullable()
+      .optional()
+      .describe("The viewer's own pick/reject flag")
       .meta(new HistoryBuilder().added('v3.3.0').getExtensions()),
     isArchived: z.boolean().describe('Is archived'),
     isTrashed: z.boolean().describe('Is trashed'),
@@ -237,6 +242,7 @@ export function mapAsset(entity: MaybeDehydrated<MapAsset>, options: AssetMapOpt
     updatedAt: asDateTimeString(entity.updatedAt),
     isFavorite: isOwner ? entity.isFavorite : (state?.isFavorite ?? false),
     colorLabel: state?.colorLabel ?? null,
+    flag: state?.flag ?? null,
     isArchived: entity.visibility === AssetVisibility.Archive,
     isTrashed: !!entity.deletedAt,
     visibility: entity.visibility,

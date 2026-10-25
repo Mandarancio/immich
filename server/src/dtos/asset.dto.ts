@@ -2,7 +2,7 @@ import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
 import { HistoryBuilder } from 'src/decorators.js';
 import { BulkIdsSchema } from 'src/dtos/asset-ids.response.dto.js';
-import { AssetColorLabelSchema, AssetType, AssetVisibilitySchema } from 'src/enum.js';
+import { AssetColorLabelSchema, AssetFlagSchema, AssetType, AssetVisibilitySchema } from 'src/enum.js';
 import { AssetStats } from 'src/repositories/asset.repository.js';
 import { IsNotSiblingOf, isoDatetimeToDate, latitudeSchema, longitudeSchema, stringToBool } from 'src/validation.js';
 
@@ -30,6 +30,7 @@ const UpdateAssetBaseSchema = z
           .getExtensions(),
       }),
     colorLabel: AssetColorLabelSchema.nullish().describe('Color label (null clears)'),
+    flag: AssetFlagSchema.nullish().describe('Pick/reject flag (null clears)'),
     description: z.string().optional().describe('Asset description'),
   })
   .refine(

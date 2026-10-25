@@ -55,7 +55,7 @@ import { extractTimeZone } from 'src/utils/date.js';
 import { batched, findOrFail } from 'src/utils/misc.js';
 import { transformOcrBoundingBox } from 'src/utils/transform.js';
 
-const STATE_KEYS = ['isFavorite', 'rating', 'colorLabel'];
+const STATE_KEYS = ['isFavorite', 'rating', 'colorLabel', 'flag'];
 
 @Injectable()
 export class AssetService extends BaseService {
@@ -106,18 +106,28 @@ export class AssetService extends BaseService {
   async update(auth: AuthDto, id: string, dto: UpdateAssetDto): Promise<AssetResponseDto> {
     if (this.isStateOnly(auth, dto)) {
       const ownedIds = await this.applyUserState(auth, [id], dto);
-      // nothing left for the owner path (non-owned asset, or only a color label which lives in the user state)
+      // nothing left for the owner path (non-owned asset, or only a color label / flag which live in the user state)
       if (ownedIds.length === 0 || (dto.isFavorite === undefined && dto.rating === undefined)) {
         return this.get(auth, id) as Promise<AssetResponseDto>;
       }
     } else {
       await this.requireAccess({ auth, permission: Permission.AssetUpdate, ids: [id] });
-      if (dto.colorLabel !== undefined) {
-        await this.assetRepository.setUserState(auth.user.id, [id], { colorLabel: dto.colorLabel });
+      const ownState = omitBy({ colorLabel: dto.colorLabel, flag: dto.flag }, isUndefined);
+      if (Object.keys(ownState).length > 0) {
+        await this.assetRepository.setUserState(auth.user.id, [id], ownState);
       }
     }
 
-    const { description, dateTimeOriginal, latitude, longitude, rating, colorLabel: _colorLabel, ...rest } = dto;
+    const {
+      description,
+      dateTimeOriginal,
+      latitude,
+      longitude,
+      rating,
+      colorLabel: _colorLabel,
+      flag: _flag,
+      ...rest
+    } = dto;
     const repos = { asset: this.assetRepository, event: this.eventRepository };
 
     let previousMotion: { id: string } | null = null;
@@ -171,18 +181,20 @@ export class AssetService extends BaseService {
       dateTimeRelative,
       timeZone,
       colorLabel,
+      flag,
     } = dto;
     let ids = requestedIds;
     if (this.isStateOnly(auth, dto)) {
       ids = await this.applyUserState(auth, requestedIds, dto);
-      // nothing left for the owner path (no owned ids, or only a color label which lives in the user state)
+      // nothing left for the owner path (no owned ids, or only a color label / flag which live in the user state)
       if (ids.length === 0 || (isFavorite === undefined && rating === undefined)) {
         return;
       }
     } else {
       await this.requireAccess({ auth, permission: Permission.AssetUpdate, ids });
-      if (colorLabel !== undefined) {
-        await this.assetRepository.setUserState(auth.user.id, ids, { colorLabel });
+      const ownState = omitBy({ colorLabel, flag }, isUndefined);
+      if (Object.keys(ownState).length > 0) {
+        await this.assetRepository.setUserState(auth.user.id, ids, ownState);
       }
     }
 
@@ -666,7 +678,7 @@ export class AssetService extends BaseService {
     await this.jobRepository.queue({ name: JobName.AssetEditThumbnailGeneration, data: { id } });
   }
 
-  // an update touching only isFavorite, rating and colorLabel is allowed on any asset the user can read;
+  // an update touching only isFavorite, rating, colorLabel and flag is allowed on any asset the user can read;
   // non-owned ones go to asset_user_state
   private isStateOnly(auth: AuthDto, dto: object): boolean {
     if (auth.sharedLink) {
@@ -682,7 +694,7 @@ export class AssetService extends BaseService {
     await this.assetRepository.setUserState(auth.user.id, ownedIds, { isFavorite });
   }
 
-  // writes the per-user state of the non-owned ids and the color label of the owned ids, and returns the owned ids
+  // writes the per-user state of the non-owned ids and the color label and flag of the owned ids, and returns the owned ids
   // (their favorite and rating are written by the owner path)
   private async applyUserState(auth: AuthDto, ids: string[], dto: UserStateChange): Promise<string[]> {
     const owned = await this.checkAccess({ auth, permission: Permission.AssetUpdate, ids });
@@ -697,8 +709,9 @@ export class AssetService extends BaseService {
       await this.assetRepository.setUserState(auth.user.id, others, pick(dto, STATE_KEYS));
     }
 
-    if (ownedIds.length > 0 && dto.colorLabel !== undefined) {
-      await this.assetRepository.setUserState(auth.user.id, ownedIds, { colorLabel: dto.colorLabel });
+    const ownState = omitBy({ colorLabel: dto.colorLabel, flag: dto.flag }, isUndefined);
+    if (ownedIds.length > 0 && Object.keys(ownState).length > 0) {
+      await this.assetRepository.setUserState(auth.user.id, ownedIds, ownState);
     }
 
     return ownedIds;
