@@ -1,4 +1,4 @@
-import { AlbumUserRole, LoginResponseDto } from '@immich/sdk';
+import { AlbumUserRole, LoginResponseDto, SharedLinkType } from '@immich/sdk';
 import { createUserDto } from 'src/fixtures.js';
 import { app, utils } from 'src/utils.js';
 import request from 'supertest';
@@ -293,5 +293,221 @@ describe('per-user asset state (rating and color label)', () => {
       expect(asViewer.colorLabel ?? null).toBeNull();
       expect(asViewer.exifInfo?.rating ?? null).toBeNull();
     });
+  });
+});
+
+const flagOf = async (accessToken: string, assetId: string) => {
+  const asset = await utils.getAssetInfo(accessToken, assetId);
+  return asset.flag ?? null;
+};
+
+// all assets of the filtered timeline, with the flag of the viewer
+const getFlaggedAssets = async (accessToken: string, query: Query) => {
+  const buckets = await request(app).get('/timeline/buckets').query(query).set(auth(accessToken));
+  expect(buckets.status).toBe(200);
+
+  const assets: Array<{ id: string; flag: string | null }> = [];
+  for (const { timeBucket } of buckets.body as { timeBucket: string }[]) {
+    const bucket = await request(app)
+      .get('/timeline/bucket')
+      .query({ ...query, timeBucket })
+      .set(auth(accessToken));
+    expect(bucket.status).toBe(200);
+    const { id, flag } = bucket.body as { id: string[]; flag: (string | null)[] };
+    for (const [index, assetId] of id.entries()) {
+      assets.push({ id: assetId, flag: flag[index] });
+    }
+  }
+
+  return assets;
+};
+
+describe('per-user asset state (pick/reject flag)', () => {
+  let admin: LoginResponseDto;
+  let owner: LoginResponseDto;
+  let editor: LoginResponseDto;
+  let viewer: LoginResponseDto;
+  let stranger: LoginResponseDto;
+  let albumId: string;
+
+  const createSharedAsset = async () => {
+    const asset = await utils.createAsset(owner.accessToken);
+    const { status } = await request(app)
+      .put(`/albums/${albumId}/assets`)
+      .set(auth(owner.accessToken))
+      .send({ ids: [asset.id] });
+    expect(status).toBe(200);
+    await utils.waitForQueueFinish(admin.accessToken, 'metadataExtraction');
+    return asset.id;
+  };
+
+  const timelineQuery = (query: Query = {}) => ({ albumId, ...query });
+
+  beforeAll(async () => {
+    await utils.resetDatabase();
+    admin = await utils.adminSetup({ onboarding: false });
+    [owner, editor, viewer, stranger] = await Promise.all([
+      utils.userSetup(admin.accessToken, createUserDto.create('flag-owner')),
+      utils.userSetup(admin.accessToken, createUserDto.create('flag-editor')),
+      utils.userSetup(admin.accessToken, createUserDto.create('flag-viewer')),
+      utils.userSetup(admin.accessToken, createUserDto.create('flag-stranger')),
+    ]);
+
+    const album = await utils.createAlbum(owner.accessToken, {
+      albumName: 'shared flags',
+      albumUsers: [
+        { userId: editor.userId, role: AlbumUserRole.Editor },
+        { userId: viewer.userId, role: AlbumUserRole.Viewer },
+      ],
+    });
+    albumId = album.id;
+  });
+
+  it('should let the owner pick, reject, overwrite and clear a flag', async () => {
+    const assetId = await createSharedAsset();
+
+    const picked = await updateState(owner.accessToken, assetId, { flag: 'pick' });
+    expect(picked.status).toBe(200);
+    expect(picked.body).toMatchObject({ id: assetId, flag: 'pick' });
+    expect(await flagOf(owner.accessToken, assetId)).toBe('pick');
+
+    // pick and reject are mutually exclusive, the last write wins
+    const rejected = await updateState(owner.accessToken, assetId, { flag: 'reject' });
+    expect(rejected.status).toBe(200);
+    expect(rejected.body).toMatchObject({ flag: 'reject' });
+    expect(await flagOf(owner.accessToken, assetId)).toBe('reject');
+
+    const cleared = await updateState(owner.accessToken, assetId, { flag: null });
+    expect(cleared.status).toBe(200);
+    expect(cleared.body.flag ?? null).toBeNull();
+    expect(await flagOf(owner.accessToken, assetId)).toBeNull();
+  });
+
+  it('should set the flag of several assets with a bulk update', async () => {
+    const first = await createSharedAsset();
+    const second = await createSharedAsset();
+
+    const bulk = await updateStates(owner.accessToken, [first, second], { flag: 'pick' });
+    expect(bulk.status).toBe(204);
+    for (const id of [first, second]) {
+      expect(await flagOf(owner.accessToken, id)).toBe('pick');
+    }
+
+    const overwritten = await updateStates(owner.accessToken, [first, second], { flag: 'reject' });
+    expect(overwritten.status).toBe(204);
+    for (const id of [first, second]) {
+      expect(await flagOf(owner.accessToken, id)).toBe('reject');
+    }
+
+    const cleared = await updateStates(owner.accessToken, [first, second], { flag: null });
+    expect(cleared.status).toBe(204);
+    for (const id of [first, second]) {
+      expect(await flagOf(owner.accessToken, id)).toBeNull();
+    }
+  });
+
+  for (const [name, getMember] of [
+    ['editor', () => editor],
+    ['viewer', () => viewer],
+  ] as const) {
+    it(`should let an album ${name} flag a shared photo without affecting the owner`, async () => {
+      const member = getMember();
+      const assetId = await createSharedAsset();
+      await updateState(owner.accessToken, assetId, { flag: 'reject' });
+
+      const { status, body } = await updateState(member.accessToken, assetId, { flag: 'pick' });
+      expect(status).toBe(200);
+      expect(body).toMatchObject({ id: assetId, flag: 'pick' });
+
+      expect(await flagOf(member.accessToken, assetId)).toBe('pick');
+      expect(await flagOf(owner.accessToken, assetId)).toBe('reject');
+
+      // clearing the flag of the member leaves the owner flag alone
+      const cleared = await updateState(member.accessToken, assetId, { flag: null });
+      expect(cleared.status).toBe(200);
+      expect(await flagOf(member.accessToken, assetId)).toBeNull();
+      expect(await flagOf(owner.accessToken, assetId)).toBe('reject');
+    });
+  }
+
+  it('should reject a user without access and leave the flag untouched', async () => {
+    const assetId = await createSharedAsset();
+    await updateState(viewer.accessToken, assetId, { flag: 'pick' });
+
+    const { status } = await updateState(stranger.accessToken, assetId, { flag: 'reject' });
+    expect(status).toBe(400);
+    const bulk = await updateStates(stranger.accessToken, [assetId], { flag: 'reject' });
+    expect(bulk.status).toBe(400);
+
+    expect(await flagOf(viewer.accessToken, assetId)).toBe('pick');
+    expect(await flagOf(owner.accessToken, assetId)).toBeNull();
+  });
+
+  it('should reject an unknown flag value', async () => {
+    const assetId = await createSharedAsset();
+    const { status } = await updateState(owner.accessToken, assetId, { flag: 'maybe' });
+    expect(status).toBe(400);
+  });
+
+  it('should filter the timeline by the flag of the viewer only', async () => {
+    const assetId = await createSharedAsset();
+    const { status } = await updateState(viewer.accessToken, assetId, { flag: 'pick' });
+    expect(status).toBe(200);
+
+    for (const flags of ['pick', 'pick,reject', 'none,pick']) {
+      const asViewer = await getFlaggedAssets(viewer.accessToken, timelineQuery({ flags }));
+      expect(asViewer).toContainEqual({ id: assetId, flag: 'pick' });
+
+      // the owner has not flagged the photo, so only a filter including none matches
+      const asOwner = await getFlaggedAssets(owner.accessToken, timelineQuery({ flags }));
+      if (flags.includes('none')) {
+        expect(asOwner).toContainEqual({ id: assetId, flag: null });
+      } else {
+        expect(asOwner.map(({ id }) => id)).not.toContain(assetId);
+      }
+    }
+
+    for (const flags of ['reject', 'none']) {
+      const asViewer = await getFlaggedAssets(viewer.accessToken, timelineQuery({ flags }));
+      expect(asViewer.map(({ id }) => id)).not.toContain(assetId);
+    }
+
+    const unflaggedForOthers = await getFlaggedAssets(editor.accessToken, timelineQuery({ flags: 'none' }));
+    expect(unflaggedForOthers).toContainEqual({ id: assetId, flag: null });
+  });
+
+  it('should find the flagged photo via album-scoped search for the flagging member only', async () => {
+    const assetId = await createSharedAsset();
+    await updateState(editor.accessToken, assetId, { flag: 'reject' });
+
+    const search = async (accessToken: string, flags: string[]) => {
+      const { status, body } = await request(app)
+        .post('/search/metadata')
+        .set(auth(accessToken))
+        .send({ albumIds: [albumId], flags });
+      expect(status).toBe(200);
+      return (body.assets.items as { id: string }[]).map(({ id }) => id);
+    };
+
+    expect(await search(editor.accessToken, ['reject'])).toContain(assetId);
+    expect(await search(editor.accessToken, ['pick'])).not.toContain(assetId);
+    expect(await search(owner.accessToken, ['reject'])).not.toContain(assetId);
+    expect(await search(owner.accessToken, ['none'])).toContain(assetId);
+    expect(await search(viewer.accessToken, ['reject'])).not.toContain(assetId);
+  });
+
+  it('should not let a shared link set or see a flag', async () => {
+    const assetId = await createSharedAsset();
+    await updateState(owner.accessToken, assetId, { flag: 'pick' });
+    const link = await utils.createSharedLink(owner.accessToken, { type: SharedLinkType.Album, albumId });
+
+    const { status } = await request(app).put(`/assets/${assetId}?key=${link.key}`).send({ flag: 'reject' });
+    expect([401, 403]).toContain(status);
+    expect(await flagOf(owner.accessToken, assetId)).toBe('pick');
+
+    // the personal flag of the link creator never leaks through the link
+    const info = await request(app).get(`/assets/${assetId}?key=${link.key}`);
+    expect(info.status).toBe(200);
+    expect(info.body.flag ?? null).toBeNull();
   });
 });

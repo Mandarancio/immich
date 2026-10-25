@@ -6,6 +6,7 @@ import { AlbumResponseSchema } from 'src/dtos/album.dto.js';
 import { AssetResponseSchema } from 'src/dtos/asset-response.dto.js';
 import {
   AssetColorLabelSchema,
+  AssetFlagSchema,
   AssetOrder,
   AssetOrderSchema,
   AssetTypeSchema,
@@ -28,6 +29,13 @@ const ColorLabelsFilterSchema = z
   .array(z.union([AssetColorLabelSchema, z.literal('none')]))
   .describe(
     'Only include assets with one of these color labels, from the viewer perspective; "none" matches unlabeled assets',
+  );
+
+// any-of; 'none' matches assets the viewer has not flagged
+const FlagsFilterSchema = z
+  .array(z.union([AssetFlagSchema, z.literal('none')]))
+  .describe(
+    'Only include assets with one of these flags, from the viewer perspective; "none" matches unflagged assets',
   );
 
 const BaseSearchSchema = z.object({
@@ -75,6 +83,7 @@ const BaseSearchSchema = z.object({
   ocr: z.string().optional().describe('Filter by OCR text content').meta(DEPRECATED_FLAT_FIELD),
   // new in v3.2.0, but flat like the rest so it stays mutually exclusive with the structured filter
   colorLabels: ColorLabelsFilterSchema.optional().meta(ADDED_V3_2),
+  flags: FlagsFilterSchema.optional().meta(ADDED_V3_2),
 });
 
 const BaseSearchWithResultsSchema = BaseSearchSchema.extend({
@@ -278,6 +287,7 @@ const searchFilterBranchShape = {
   ocr: StringSimilarityFilterSchema,
   rating: NumberFilterNullableSchema,
   colorLabels: ColorLabelsFilterSchema,
+  flags: FlagsFilterSchema,
   fileSizeInBytes: NumberFilterSchema,
   takenAt: DateFilterSchema,
   createdAt: DateFilterSchema,
@@ -334,7 +344,7 @@ export const isFullyAlbumConfined = (filter: SearchFilter): boolean =>
   isAlbumConfined(filter) || (!!filter.or?.length && filter.or.every((branch) => isAlbumConfined(branch)));
 
 // flat fields added after the structured filter: not deprecated, but still exclusive with it
-const FLAT_ONLY_FIELDS = new Set(['colorLabels']);
+const FLAT_ONLY_FIELDS = new Set(['colorLabels', 'flags']);
 
 /**
  * The structured shape and the deprecated flat search fields are mutually exclusive

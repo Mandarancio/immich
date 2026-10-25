@@ -11723,6 +11723,34 @@
             }
           },
           {
+            "name": "flags",
+            "required": false,
+            "in": "query",
+            "x-immich-history": [
+              {
+                "version": "v3.2.0",
+                "state": "Added"
+              }
+            ],
+            "description": "Only include assets with one of these flags, from the viewer perspective; \"none\" matches unflagged assets",
+            "schema": {
+              "type": "array",
+              "items": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/AssetFlag"
+                  },
+                  {
+                    "type": "string",
+                    "enum": [
+                      "none"
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          {
             "name": "isEncoded",
             "required": false,
             "in": "query",
@@ -16235,6 +16263,28 @@
             }
           },
           {
+            "name": "flags",
+            "required": false,
+            "in": "query",
+            "description": "Only include assets with one of these flags (comma-separated); \"none\" matches unflagged assets",
+            "schema": {
+              "type": "array",
+              "items": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/AssetFlag"
+                  },
+                  {
+                    "type": "string",
+                    "enum": [
+                      "none"
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          {
             "name": "isFavorite",
             "required": false,
             "in": "query",
@@ -16464,6 +16514,28 @@
                 "anyOf": [
                   {
                     "$ref": "#/components/schemas/AssetColorLabel"
+                  },
+                  {
+                    "type": "string",
+                    "enum": [
+                      "none"
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "name": "flags",
+            "required": false,
+            "in": "query",
+            "description": "Only include assets with one of these flags (comma-separated); \"none\" matches unflagged assets",
+            "schema": {
+              "type": "array",
+              "items": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/AssetFlag"
                   },
                   {
                     "type": "string",
@@ -20311,6 +20383,15 @@
             "nullable": true,
             "type": "string"
           },
+          "flag": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AssetFlag"
+              }
+            ],
+            "description": "Pick/reject flag (null clears)",
+            "nullable": true
+          },
           "ids": {
             "description": "Asset IDs to update",
             "items": {
@@ -20870,6 +20951,14 @@
         ],
         "type": "string"
       },
+      "AssetFlag": {
+        "description": "Asset pick/reject flag",
+        "enum": [
+          "pick",
+          "reject"
+        ],
+        "type": "string"
+      },
       "AssetIdErrorReason": {
         "description": "Error reason if failed",
         "enum": [
@@ -21375,6 +21464,21 @@
             "description": "The UTC timestamp when the file was last modified on the filesystem. This reflects the last time the physical file was changed, which may be different from when the photo was originally taken.",
             "format": "date-time",
             "type": "string"
+          },
+          "flag": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AssetFlag"
+              }
+            ],
+            "description": "The viewer's own pick/reject flag",
+            "nullable": true,
+            "x-immich-history": [
+              {
+                "version": "v3.3.0",
+                "state": "Added"
+              }
+            ]
           },
           "hasMetadata": {
             "description": "Whether asset has metadata",
@@ -23937,6 +24041,29 @@
           },
           "filter": {
             "$ref": "#/components/schemas/SearchFilter",
+            "x-immich-history": [
+              {
+                "version": "v3.2.0",
+                "state": "Added"
+              }
+            ]
+          },
+          "flags": {
+            "description": "Only include assets with one of these flags, from the viewer perspective; \"none\" matches unflagged assets",
+            "items": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/AssetFlag"
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "none"
+                  ]
+                }
+              ]
+            },
+            "type": "array",
             "x-immich-history": [
               {
                 "version": "v3.2.0",
@@ -26684,6 +26811,29 @@
               }
             ]
           },
+          "flags": {
+            "description": "Only include assets with one of these flags, from the viewer perspective; \"none\" matches unflagged assets",
+            "items": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/AssetFlag"
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "none"
+                  ]
+                }
+              ]
+            },
+            "type": "array",
+            "x-immich-history": [
+              {
+                "version": "v3.2.0",
+                "state": "Added"
+              }
+            ]
+          },
           "isEncoded": {
             "deprecated": true,
             "description": "Filter by encoded status",
@@ -27583,6 +27733,23 @@
           "fileSizeInBytes": {
             "$ref": "#/components/schemas/NumberFilter"
           },
+          "flags": {
+            "description": "Only include assets with one of these flags, from the viewer perspective; \"none\" matches unflagged assets",
+            "items": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/AssetFlag"
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "none"
+                  ]
+                }
+              ]
+            },
+            "type": "array"
+          },
           "hasAlbums": {
             "$ref": "#/components/schemas/BoolFilter"
           },
@@ -27708,6 +27875,23 @@
           },
           "fileSizeInBytes": {
             "$ref": "#/components/schemas/NumberFilter"
+          },
+          "flags": {
+            "description": "Only include assets with one of these flags, from the viewer perspective; \"none\" matches unflagged assets",
+            "items": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/AssetFlag"
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "none"
+                  ]
+                }
+              ]
+            },
+            "type": "array"
           },
           "hasAlbums": {
             "$ref": "#/components/schemas/BoolFilter"
@@ -28943,6 +29127,29 @@
               }
             ]
           },
+          "flags": {
+            "description": "Only include assets with one of these flags, from the viewer perspective; \"none\" matches unflagged assets",
+            "items": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/AssetFlag"
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "none"
+                  ]
+                }
+              ]
+            },
+            "type": "array",
+            "x-immich-history": [
+              {
+                "version": "v3.2.0",
+                "state": "Added"
+              }
+            ]
+          },
           "isEncoded": {
             "deprecated": true,
             "description": "Filter by encoded status",
@@ -29727,6 +29934,29 @@
           },
           "filter": {
             "$ref": "#/components/schemas/SearchFilter",
+            "x-immich-history": [
+              {
+                "version": "v3.2.0",
+                "state": "Added"
+              }
+            ]
+          },
+          "flags": {
+            "description": "Only include assets with one of these flags, from the viewer perspective; \"none\" matches unflagged assets",
+            "items": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/AssetFlag"
+                },
+                {
+                  "type": "string",
+                  "enum": [
+                    "none"
+                  ]
+                }
+              ]
+            },
+            "type": "array",
             "x-immich-history": [
               {
                 "version": "v3.2.0",
@@ -32677,6 +32907,18 @@
             },
             "type": "array"
           },
+          "flag": {
+            "description": "Array of viewer pick/reject flags (null when unflagged)",
+            "items": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/AssetFlag"
+                }
+              ],
+              "nullable": true
+            },
+            "type": "array"
+          },
           "id": {
             "description": "Array of asset IDs in the time bucket",
             "items": {
@@ -32806,6 +33048,7 @@
           "createdAt",
           "duration",
           "fileCreatedAt",
+          "flag",
           "id",
           "isFavorite",
           "isImage",
@@ -32955,6 +33198,15 @@
           "description": {
             "description": "Asset description",
             "type": "string"
+          },
+          "flag": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AssetFlag"
+              }
+            ],
+            "description": "Pick/reject flag (null clears)",
+            "nullable": true
           },
           "isFavorite": {
             "description": "Mark as favorite",

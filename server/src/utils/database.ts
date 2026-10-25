@@ -711,6 +711,11 @@ export function searchAssetBuilderLegacy(kysely: Kysely<DB>, options: AssetSearc
         ),
       ),
     )
+    .$if(!!options.flags && options.flags.length > 0 && !!options.viewingUserId, (qb) =>
+      qb.where(
+        viewerFlagsPredicate({ userId: options.viewingUserId!, sharedLink: options.sharedLink }, options.flags!),
+      ),
+    )
     .$if(!!options.checksum, (qb) => qb.where('asset.checksum', '=', options.checksum!))
     .$if(!!options.id, (qb) => qb.where('asset.id', '=', asUuid(options.id!)))
     .$if(!!options.libraryId, (qb) => qb.where('asset.libraryId', '=', asUuid(options.libraryId!)))
@@ -1025,6 +1030,7 @@ function branchPredicates(eb: AssetExpressionBuilder, branch: SearchFilterBranch
     ...(branch.colorLabels && branch.colorLabels.length > 0 && viewer
       ? [viewerColorLabelsPredicate(viewer, branch.colorLabels)]
       : []),
+    ...(branch.flags && branch.flags.length > 0 && viewer ? [viewerFlagsPredicate(viewer, branch.flags)] : []),
     ...comparisonPredicates(eb, 'asset_exif.fileSizeInByte', branch.fileSizeInBytes),
     ...comparisonPredicates(eb, 'asset.fileCreatedAt', branch.takenAt),
     ...comparisonPredicates(eb, 'asset.createdAt', branch.createdAt),
