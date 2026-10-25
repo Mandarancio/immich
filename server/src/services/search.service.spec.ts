@@ -375,5 +375,26 @@ describe(SearchService.name, () => {
         expect.objectContaining({ language: 'de' }),
       );
     });
+
+    it('should search the album instead of the own and partner library when albumIds is set', async () => {
+      const albumId = newUuid();
+      mocks.access.album.checkSharedAlbumAccess.mockResolvedValue(new Set([albumId]));
+
+      await sut.searchSmart(authStub.user1, { size: 100, query: 'test', albumIds: [albumId] });
+
+      expect(mocks.search.searchSmart).toHaveBeenCalledWith(
+        { page: 1, size: 100 },
+        expect.objectContaining({ albumIds: [albumId], userIds: undefined }),
+      );
+    });
+
+    it('should reject albumIds the user cannot read', async () => {
+      const albumId = newUuid();
+
+      await expect(sut.searchSmart(authStub.user1, { size: 100, query: 'test', albumIds: [albumId] })).rejects.toThrow(
+        BadRequestException,
+      );
+      expect(mocks.search.searchSmart).not.toHaveBeenCalled();
+    });
   });
 });

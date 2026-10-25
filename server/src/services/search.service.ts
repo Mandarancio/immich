@@ -179,7 +179,13 @@ export class SearchService extends BaseService {
       throw new BadRequestException('Smart search is not enabled');
     }
 
-    const userIds = this.getUserIdsToSearch(auth, dto.visibility);
+    let userIds: string[] | undefined;
+    if (dto.albumIds && dto.albumIds.length > 0) {
+      await this.requireAccess({ auth, ids: dto.albumIds, permission: Permission.AlbumRead });
+    } else {
+      userIds = await this.getUserIdsToSearch(auth, dto.visibility);
+    }
+
     const embedding = await this.resolveEmbedding(auth, dto, machineLearning);
     const page = dto.page ?? 1;
     const size = dto.size;
@@ -187,7 +193,7 @@ export class SearchService extends BaseService {
       { page, size },
       {
         ...dto,
-        userIds: await userIds,
+        userIds,
         viewingUserId: auth.user.id,
         embedding,
         visibility: dto.visibility ?? (auth.session?.hasElevatedPermission ? undefined : 'not-locked'),
