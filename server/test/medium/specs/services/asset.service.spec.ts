@@ -129,7 +129,7 @@ describe(AssetService.name, () => {
       await sut.updateAll(factory.auth({ user: member }), { ids: [asset.id], isFavorite: true });
 
       await expect(ctx.get(AssetRepository).getUserStates(member.id, [asset.id])).resolves.toEqual(
-        new Map([[asset.id, { isFavorite: true, rating: null, colorLabel: null }]]),
+        new Map([[asset.id, { isFavorite: true, rating: null, colorLabel: null, flag: null }]]),
       );
       const row = await ctx.database
         .selectFrom('asset')
