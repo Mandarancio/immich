@@ -145,11 +145,11 @@ describe('CompareSlot', () => {
     vi.mocked(getAssetInfo).mockResolvedValue(info());
 
     const { unmount } = render(CompareSlot, { asset, focused: true });
-    expect(screen.getByTestId('compare-slot').className).toContain('outline-primary');
+    expect(screen.getByTestId('compare-slot-focus-ring')).toBeInTheDocument();
     unmount();
 
     render(CompareSlot, { asset, focused: false });
-    expect(screen.getByTestId('compare-slot').className).not.toContain('outline-primary');
+    expect(screen.queryByTestId('compare-slot-focus-ring')).not.toBeInTheDocument();
   });
 
   describe('original', () => {
