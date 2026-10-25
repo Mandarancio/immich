@@ -26,7 +26,7 @@ import { AssetOrder, AssetVisibility, Permission } from 'src/enum.js';
 import { AssetSearchScope } from 'src/repositories/search.repository.js';
 import { BaseService } from 'src/services/base.service.js';
 import { requireElevatedPermission } from 'src/utils/access.js';
-import { getMyPartnerIds } from 'src/utils/asset.util.js';
+import { getMyPartnerIds, getViewerFavoriteIds } from 'src/utils/asset.util.js';
 import { isSmartSearchEnabled } from 'src/utils/misc.js';
 import { decodeSearchCursor, encodeSearchCursor } from 'src/utils/search-cursor.js';
 import { applyLockedVisibilityPolicy, collectFilterIds } from 'src/utils/search-filter.js';
@@ -110,7 +110,7 @@ export class SearchService extends BaseService {
       },
     );
 
-    return this.mapResponse(items, { auth }, { nextPage: hasNextPage ? (page + 1).toString() : null });
+    return this.mapResponse(auth, items, { auth }, { nextPage: hasNextPage ? (page + 1).toString() : null });
   }
 
   async searchStatistics(auth: AuthDto, dto: StatisticsSearchDto): Promise<SearchStatisticsResponseDto> {
@@ -147,7 +147,7 @@ export class SearchService extends BaseService {
       userIds,
       viewingUserId: auth.user.id,
     });
-    return items.map((item) => mapAsset(item, { auth }));
+    return this.mapAssets(auth, items);
   }
 
   async searchLargeAssets(auth: AuthDto, dto: LargeAssetSearchDto): Promise<AssetResponseDto[]> {
@@ -162,7 +162,7 @@ export class SearchService extends BaseService {
       userIds,
       viewingUserId: auth.user.id,
     });
-    return items.map((item) => mapAsset(item, { auth }));
+    return this.mapAssets(auth, items);
   }
 
   async searchSmart(auth: AuthDto, dto: SmartSearchDto): Promise<SearchResponseDto> {
@@ -200,7 +200,7 @@ export class SearchService extends BaseService {
       },
     );
 
-    return this.mapResponse(items, { auth }, { nextPage: hasNextPage ? (page + 1).toString() : null });
+    return this.mapResponse(auth, items, { auth }, { nextPage: hasNextPage ? (page + 1).toString() : null });
   }
 
   async getAssetsByCity(auth: AuthDto): Promise<AssetResponseDto[]> {
@@ -261,7 +261,12 @@ export class SearchService extends BaseService {
       scope,
     );
 
-    return this.mapResponse(items, { auth }, { nextCursor: hasNextPage ? encodeSearchCursor(offset + size) : null });
+    return this.mapResponse(
+      auth,
+      items,
+      { auth },
+      { nextCursor: hasNextPage ? encodeSearchCursor(offset + size) : null },
+    );
   }
 
   private async searchStatisticsV3(auth: AuthDto, dto: StatisticsSearchDto): Promise<SearchStatisticsResponseDto> {
@@ -281,7 +286,7 @@ export class SearchService extends BaseService {
       },
       scope,
     );
-    return items.map((item) => mapAsset(item, { auth }));
+    return this.mapAssets(auth, items);
   }
 
   private async searchSmartV3(auth: AuthDto, dto: SmartSearchDto): Promise<SearchResponseDto> {
@@ -302,7 +307,7 @@ export class SearchService extends BaseService {
       scope,
     );
 
-    return this.mapResponse(items, { auth });
+    return this.mapResponse(auth, items, { auth });
   }
 
   private async resolveSearchScopeV3(
@@ -372,17 +377,27 @@ export class SearchService extends BaseService {
     return [auth.user.id, ...partnerIds];
   }
 
-  private mapResponse(
+  private async mapAssets(
+    auth: AuthDto,
+    assets: MapAsset[],
+    options: AssetMapOptions = {},
+  ): Promise<AssetResponseDto[]> {
+    const favoriteIds = await getViewerFavoriteIds(this.assetRepository, auth, assets);
+    return assets.map((asset) => mapAsset(asset, { ...options, auth, favoriteIds }));
+  }
+
+  private async mapResponse(
+    auth: AuthDto,
     assets: MapAsset[],
     options: AssetMapOptions,
     page: { nextPage?: string | null; nextCursor?: string | null } = {},
-  ): SearchResponseDto {
+  ): Promise<SearchResponseDto> {
     return {
       albums: { total: 0, count: 0, items: [], facets: [] },
       assets: {
         total: assets.length,
         count: assets.length,
-        items: assets.map((asset) => mapAsset(asset, options)),
+        items: await this.mapAssets(auth, assets, options),
         facets: [],
         nextPage: page.nextPage ?? null,
         nextCursor: page.nextCursor ?? null,

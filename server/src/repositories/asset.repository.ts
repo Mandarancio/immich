@@ -716,10 +716,16 @@ export class AssetRepository {
       .select((eb) => eb.fn.countAll<number>().filterWhere('type', '=', AssetType.Image).as(AssetType.Image))
       .select((eb) => eb.fn.countAll<number>().filterWhere('type', '=', AssetType.Video).as(AssetType.Video))
       .select((eb) => eb.fn.countAll<number>().filterWhere('type', '=', AssetType.Other).as(AssetType.Other))
-      .where('ownerId', '=', asUuid(ownerId))
+      .where((eb) => {
+        const owned = eb('asset.ownerId', '=', asUuid(ownerId));
+        // the favorites count also covers assets other users shared with this user
+        return isFavorite === true ? eb.or([owned, isSharedFavoriteFor(ownerId)]) : owned;
+      })
       .$if(visibility === undefined, withDefaultVisibility)
       .$if(!!visibility, (qb) => qb.where('asset.visibility', '=', visibility!))
-      .$if(isFavorite !== undefined, (qb) => qb.where('isFavorite', '=', isFavorite!))
+      .$if(isFavorite !== undefined, (qb) =>
+        qb.where((eb) => (isFavorite ? isFavoriteFor(ownerId) : eb.not(isFavoriteFor(ownerId)))),
+      )
       .$if(!!isTrashed, (qb) => qb.where('asset.status', '!=', AssetStatus.Deleted))
       .where('deletedAt', isTrashed ? 'is not' : 'is', null)
       .executeTakeFirstOrThrow();

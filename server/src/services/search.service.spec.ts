@@ -26,6 +26,23 @@ describe(SearchService.name, () => {
     expect(sut).toBeDefined();
   });
 
+  describe('searchMetadata', () => {
+    it('should report viewer favorites for non-owned search results', async () => {
+      const auth = AuthFactory.create();
+      const asset = AssetFactory.create(); // owned by someone else
+      mocks.search.searchMetadata.mockResolvedValue({
+        hasNextPage: false,
+        items: [getForAsset(asset) as never],
+      });
+      mocks.asset.getFavoriteIds.mockResolvedValue(new Set([asset.id]));
+
+      const result = await sut.searchMetadata(auth, { size: 250 });
+
+      expect(mocks.asset.getFavoriteIds).toHaveBeenCalledWith(auth.user.id, [asset.id]);
+      expect(result.assets.items[0].isFavorite).toBe(true);
+    });
+  });
+
   describe('searchPerson', () => {
     it('should pass options to search', async () => {
       const auth = AuthFactory.create();

@@ -43,6 +43,27 @@ describe(SearchService.name, () => {
     expect(sut).toBeDefined();
   });
 
+  it('should find a favorited shared-album asset with the legacy isFavorite filter', async () => {
+    const { sut, ctx } = setup();
+    const { user: owner } = await ctx.newUser();
+    const { user: member } = await ctx.newUser();
+    const { asset } = await ctx.newAsset({ ownerId: owner.id });
+    await ctx.newExif({ assetId: asset.id, make: 'Canon' });
+    const { album } = await ctx.newAlbum({ ownerId: owner.id }, [asset.id]);
+    await ctx.newAlbumUser({ albumId: album.id, userId: member.id, role: AlbumUserRole.Viewer });
+    await ctx.get(AssetRepository).addFavorites(member.id, [asset.id]);
+
+    const asMember = await sut.searchMetadata(factory.auth({ user: member }), { size: 250, isFavorite: true });
+    expect(asMember.assets.items.map(({ id }) => id)).toEqual([asset.id]);
+    expect(asMember.assets.items[0].isFavorite).toBe(true);
+
+    const asOwner = await sut.searchMetadata(factory.auth({ user: owner }), { size: 250, isFavorite: true });
+    expect(asOwner.assets.items).toHaveLength(0);
+
+    const unfavorited = await sut.searchMetadata(factory.auth({ user: member }), { size: 250, isFavorite: false });
+    expect(unfavorited.assets.items).toHaveLength(0);
+  });
+
   it('should return assets', async () => {
     const { sut, ctx } = setup();
     const { user } = await ctx.newUser();
