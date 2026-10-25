@@ -7,13 +7,14 @@
     alwaysLoadOriginalFile,
     alwaysLoadOriginalVideo,
     autoPlayVideo,
+    compareRejectBehavior,
     locale,
     loopVideo,
     playVideoThumbnailOnHover,
     showDeleteModal,
   } from '$lib/stores/preferences.store';
   import { createDateFormatter, findLocale } from '$lib/utils';
-  import { Field, Switch, Text, Theme, themeManager, ThemePreference } from '@immich/ui';
+  import { Field, Select, Switch, Text, Theme, themeManager, ThemePreference } from '@immich/ui';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
   import { fade } from 'svelte/transition';
@@ -110,6 +111,16 @@
 
       <Field label={$t('play_original_video')} description={$t('play_original_video_setting_description')}>
         <Switch bind:checked={$alwaysLoadOriginalVideo} />
+      </Field>
+
+      <Field label={$t('compare_reject_behavior')} description={$t('compare_reject_behavior_description')}>
+        <Select
+          options={[
+            { label: $t('compare_reject_remove'), value: 'remove' },
+            { label: $t('compare_reject_dim'), value: 'dim' },
+          ]}
+          bind:value={$compareRejectBehavior}
+        />
       </Field>
 
       <Field label={$t('permanent_deletion_warning')} description={$t('permanent_deletion_warning_setting_description')}

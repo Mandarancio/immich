@@ -127,6 +127,9 @@ export const showDeleteModal = persisted<boolean>('delete-confirm-dialog', true,
 
 export const alwaysLoadOriginalFile = persisted<boolean>('always-load-original-file', false, {});
 
+export type CompareRejectBehavior = 'remove' | 'dim';
+export const compareRejectBehavior = persisted<CompareRejectBehavior>('compare-reject-behavior', 'remove', {});
+
 export const playVideoThumbnailOnHover = persisted<boolean>('play-video-thumbnail-on-hover', true, {});
 
 export const loopVideo = persisted<boolean>('loop-video', true, {});
