@@ -173,12 +173,18 @@
   data-testid="compare-slot"
   role="presentation"
   class={[
-    'relative flex min-h-0 min-w-0 flex-col overflow-hidden bg-black -outline-offset-2 transition-opacity',
-    focused && 'outline-2 outline-primary',
+    'relative flex min-h-0 min-w-0 flex-col overflow-hidden bg-black transition-opacity',
     dimmed && 'opacity-40',
   ]}
   onclick={() => compareManager.focus(asset.id)}
 >
+  {#if focused}
+    <div
+      data-testid="compare-slot-focus-ring"
+      class="pointer-events-none absolute inset-0 z-10 border-2 border-primary"
+    ></div>
+  {/if}
+
   <div bind:this={container} class="min-h-0 flex-1">
     <img
       bind:this={imageElement}
