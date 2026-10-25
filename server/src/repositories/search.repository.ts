@@ -92,7 +92,6 @@ export interface SearchExifOptions {
 
 export interface SearchEmbeddingOptions {
   embedding: string;
-  userIds: string[];
 }
 
 export interface SearchOcrOptions {
@@ -165,7 +164,7 @@ export type SmartSearchOptions = SearchDateOptions &
 
 export type LargeAssetSearchOptions = AssetSearchOptions & { minFileSize?: number };
 
-export interface FaceEmbeddingSearch extends Omit<SearchEmbeddingOptions, 'userIds'> {
+export interface FaceEmbeddingSearch extends SearchEmbeddingOptions {
   clusterGroupId: string;
   hasPerson?: boolean;
   numResults: number;
