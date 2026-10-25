@@ -319,18 +319,28 @@ export function isFavoriteFor(userId: string) {
   ]);
 }
 
-// readable through another user: a shared album the user is a member of, or a partner share
+// readable through another user, mirroring the access checks: a shared album the user is a member of,
+// or a partner share of a visible, non-trashed asset from an active sharer
 export function isSharedWith(userId: string) {
   const eb = expressionBuilder<DB, 'asset'>();
-  return eb.or([
-    inSharedAlbum(userId, 'asset.id'),
-    eb.exists(
-      eb
-        .selectFrom('partner')
-        .select(sql.lit(1).as('exists'))
-        .whereRef('partner.sharedById', '=', 'asset.ownerId')
-        .where('partner.sharedWithId', '=', userId),
-    ),
+  return eb.and([
+    eb('asset.deletedAt', 'is', null),
+    eb.or([
+      inSharedAlbum(userId, 'asset.id'),
+      eb.and([
+        eb('asset.visibility', 'in', [AssetVisibility.Timeline, AssetVisibility.Hidden]),
+        eb.exists(
+          eb
+            .selectFrom('partner')
+            .select(sql.lit(1).as('exists'))
+            .innerJoin('user as sharedBy', (join) =>
+              join.onRef('sharedBy.id', '=', 'partner.sharedById').on('sharedBy.deletedAt', 'is', null),
+            )
+            .whereRef('partner.sharedById', '=', 'asset.ownerId')
+            .where('partner.sharedWithId', '=', userId),
+        ),
+      ]),
+    ]),
   ]);
 }
 

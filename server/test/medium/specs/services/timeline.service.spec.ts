@@ -319,6 +319,85 @@ describe(TimelineService.name, () => {
       await expect(sut.getTimeBuckets(factory.auth({ user: member }), { isFavorite: true })).resolves.toHaveLength(0);
     });
 
+    it('should hide a favorited partner asset once the partner archives it', async () => {
+      const { sut, ctx } = setup();
+      const { user: sharer } = await ctx.newUser();
+      const { user: viewer } = await ctx.newUser();
+      await ctx.newPartner({ sharedById: sharer.id, sharedWithId: viewer.id });
+      const { asset } = await ctx.newAsset({ ownerId: sharer.id });
+      await ctx.newExif({ assetId: asset.id, make: 'Canon' });
+      await ctx.get(AssetRepository).addFavorites(viewer.id, [asset.id]);
+      await expect(sut.getTimeBuckets(factory.auth({ user: viewer }), { isFavorite: true })).resolves.toHaveLength(1);
+
+      await ctx.database
+        .updateTable('asset')
+        .set({ visibility: AssetVisibility.Archive })
+        .where('id', '=', asset.id)
+        .execute();
+
+      await expect(sut.getTimeBuckets(factory.auth({ user: viewer }), { isFavorite: true })).resolves.toHaveLength(0);
+    });
+
+    it('should hide a favorited partner asset once the partner is removed', async () => {
+      const { sut, ctx } = setup();
+      const { user: sharer } = await ctx.newUser();
+      const { user: viewer } = await ctx.newUser();
+      await ctx.newPartner({ sharedById: sharer.id, sharedWithId: viewer.id });
+      const { asset } = await ctx.newAsset({ ownerId: sharer.id });
+      await ctx.newExif({ assetId: asset.id, make: 'Canon' });
+      await ctx.get(AssetRepository).addFavorites(viewer.id, [asset.id]);
+      await ctx.database
+        .deleteFrom('partner')
+        .where('sharedById', '=', sharer.id)
+        .where('sharedWithId', '=', viewer.id)
+        .execute();
+
+      await expect(sut.getTimeBuckets(factory.auth({ user: viewer }), { isFavorite: true })).resolves.toHaveLength(0);
+    });
+
+    it('should not list another user trashed shared asset on the trashed favorites timeline', async () => {
+      const { sut, ctx } = setup();
+      const { owner, member, asset } = await setupSharedAlbum(ctx);
+      await ctx.get(AssetRepository).addFavorites(member.id, [asset.id]);
+      await ctx.database.updateTable('asset').set({ deletedAt: new Date() }).where('id', '=', asset.id).execute();
+
+      await expect(
+        sut.getTimeBuckets(factory.auth({ user: member }), { isFavorite: true, isTrashed: true }),
+      ).resolves.toHaveLength(0);
+      await expect(sut.getTimeBuckets(factory.auth({ user: owner }), { isTrashed: true })).resolves.toHaveLength(1);
+    });
+
+    it('should exclude an asset the member favorited from the non-favorites timeline', async () => {
+      const { sut, ctx } = setup();
+      const { member, asset, album } = await setupSharedAlbum(ctx);
+      await ctx.get(AssetRepository).addFavorites(member.id, [asset.id]);
+
+      await expect(
+        sut.getTimeBuckets(factory.auth({ user: member }), { albumId: album.id, isFavorite: false }),
+      ).resolves.toHaveLength(0);
+      await expect(
+        sut.getTimeBuckets(factory.auth({ user: member }), { albumId: album.id, isFavorite: true }),
+      ).resolves.toHaveLength(1);
+    });
+
+    it('should not report the link creator personal favorites on a shared link bucket', async () => {
+      const { sut, ctx } = setup();
+      const { owner, member, asset, album } = await setupSharedAlbum(ctx);
+      await ctx.get(AssetRepository).addFavorites(member.id, [asset.id]);
+      const { id: sharedLinkId } = await ctx.get(SharedLinkRepository).create({
+        allowUpload: false,
+        key: Buffer.from('favorites-link'),
+        type: SharedLinkType.Album,
+        userId: member.id,
+        albumId: album.id,
+      });
+      const [{ timeBucket: bucket }] = await sut.getTimeBuckets(factory.auth({ user: owner }), { albumId: album.id });
+
+      const auth = factory.auth({ user: member, sharedLink: { id: sharedLinkId, showExif: true } });
+      const response = JSON.parse(await sut.getTimeBucket(auth, { albumId: album.id, timeBucket: bucket }));
+      expect(response.isFavorite).toEqual([false]);
+    });
+
     it('should keep the owner favorite behaviour unchanged', async () => {
       const { sut, ctx } = setup();
       const { user } = await ctx.newUser();
